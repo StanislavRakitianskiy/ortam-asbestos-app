@@ -39,6 +39,13 @@ export class ValidationError extends Error {
   }
 }
 
+/** Services parse again what the route handler already validated, so a direct call cannot skip a rule. */
+export function parseInput<S extends z.ZodType>(schema: S, input: unknown): z.output<S> {
+  const result = schema.safeParse(input);
+  if (!result.success) throw ValidationError.fromZod(result.error);
+  return result.data;
+}
+
 export class NotFoundError extends Error {
   constructor(message: string) {
     super(message);

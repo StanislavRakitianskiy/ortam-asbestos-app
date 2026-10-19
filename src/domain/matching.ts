@@ -37,6 +37,10 @@ export const ISSUE_TYPES = [
   "RATE_UNIT_MISMATCH",
   "UNKNOWN_RATE_REF",
   "MISSING_RATE_FOR_DETECTED",
+  // Raised by src/domain/labRowIssues.ts from the review state of the lab reports and rows, not by matchProject.
+  "LAB_REPORT_NOT_REVIEWED",
+  "EVIDENCE_NOT_VERIFIED",
+  "LOW_CONFIDENCE",
 ] as const;
 export type IssueType = (typeof ISSUE_TYPES)[number];
 
@@ -394,7 +398,8 @@ function addDuplicateReportIssues(issues: IssueCollector, results: readonly Acce
   }
 }
 
-function issue(
+/** Builds an issue with its stable key: the type plus the IDs it is about. */
+export function issue(
   type: IssueType,
   ids: readonly string[],
   severity: IssueSeverity,

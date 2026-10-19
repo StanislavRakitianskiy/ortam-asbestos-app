@@ -1,5 +1,4 @@
 import type { LabResult, Prisma, PrismaClient } from "@prisma/client";
-import type { z } from "zod";
 import { isBulkAcceptable } from "@/domain/labReview";
 import {
   EDITABLE_RESULT_FIELDS,
@@ -12,7 +11,7 @@ import {
 import { acceptedLabResultSchema, type AcceptedLabResult } from "@/domain/types";
 import { getDb } from "@/server/db";
 import { confidenceSchema, labDocumentStatusSchema, reviewStatusSchema } from "@/server/dbEnums";
-import { ConflictError, NotFoundError, ValidationError } from "@/server/errors";
+import { ConflictError, NotFoundError, ValidationError, parseInput } from "@/server/errors";
 import {
   documentInclude,
   flagsSchema,
@@ -31,11 +30,35 @@ type ReviewedDocument = { id: string; fileName: string; pageCount: number };
 
 export type BulkAcceptOutcome = { accepted: number; document: LabDocumentDto };
 
-/** The service parses again what the route handler already validated, so a direct call cannot skip a rule. */
-function parseInput<S extends z.ZodType>(schema: S, input: unknown): z.output<S> {
-  const result = schema.safeParse(input);
-  if (!result.success) throw ValidationError.fromZod(result.error);
-  return result.data;
+const acceptedRowInclude = { labDocument: { select: { id: true, fileName: true, labReportId: true } } } satisfies Prisma.LabResultInclude;
+type AcceptedRow = Prisma.LabResultGetPayload<{ include: typeof acceptedRowInclude }>;
+
+/** Accepted rows of ACCEPTED documents (D-024), in upload order, then row order. */
+export function findAcceptedRows(db: Tx, projectId: string): Promise<AcceptedRow[]> {
+  return db.labResult.findMany({
+    where: { reviewStatus: "ACCEPTED", labDocument: { projectId, status: "ACCEPTED" } },
+    include: acceptedRowInclude,
+    orderBy: [{ labDocument: { createdAt: "asc" } }, { createdAt: "asc" }],
+  });
+}
+
+export function toAcceptedLabResult(row: AcceptedRow): AcceptedLabResult {
+  return acceptedLabResultSchema.parse({
+    id: row.id,
+    documentId: row.labDocument.id,
+    // A report without an ID (none extracted or entered) is identified by its file name (warning LAB_REPORT_ID_MISSING).
+    labReportId: row.labDocument.labReportId?.trim() || row.labDocument.fileName,
+    fileName: row.labDocument.fileName,
+    page: row.sourcePage,
+    sourceText: row.sourceText,
+    sampleId: row.sampleId,
+    layer: row.layer,
+    resultLabel: row.resultLabel,
+    asbestosType: row.asbestosType,
+    percentage: row.percentage,
+    percentageRaw: row.percentageRaw,
+    labNote: row.labNote,
+  });
 }
 
 /** Correction.oldValue / newValue: JSON-encoded, null when absent. */
@@ -248,29 +271,7 @@ export function labReviewService(db: PrismaClient = getDb()) {
      * A partly reviewed document contributes nothing, so a not-detected layer can never stand in for a pending one.
      */
     async acceptedResults(projectId: string): Promise<AcceptedLabResult[]> {
-      const rows = await db.labResult.findMany({
-        where: { reviewStatus: "ACCEPTED", labDocument: { projectId, status: "ACCEPTED" } },
-        include: { labDocument: { select: { id: true, fileName: true, labReportId: true } } },
-        orderBy: [{ labDocument: { createdAt: "asc" } }, { createdAt: "asc" }],
-      });
-      return rows.map((row) =>
-        acceptedLabResultSchema.parse({
-          id: row.id,
-          documentId: row.labDocument.id,
-          // A report without an ID (none extracted or entered) is identified by its file name (warning LAB_REPORT_ID_MISSING).
-          labReportId: row.labDocument.labReportId?.trim() || row.labDocument.fileName,
-          fileName: row.labDocument.fileName,
-          page: row.sourcePage,
-          sourceText: row.sourceText,
-          sampleId: row.sampleId,
-          layer: row.layer,
-          resultLabel: row.resultLabel,
-          asbestosType: row.asbestosType,
-          percentage: row.percentage,
-          percentageRaw: row.percentageRaw,
-          labNote: row.labNote,
-        }),
-      );
+      return (await findAcceptedRows(db, projectId)).map(toAcceptedLabResult);
     },
   };
 }

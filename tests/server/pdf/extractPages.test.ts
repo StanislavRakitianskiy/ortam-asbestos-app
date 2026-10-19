@@ -34,6 +34,16 @@ describe("extractPages", () => {
     }
   });
 
+  it("reads the candidate-made LAB-X test fixture in the same table format, with its label", async () => {
+    const { pages } = await extractPages(new Uint8Array(await readFile("fixtures/test/LAB-X_edge_cases.pdf")));
+    expect(pages[0].lines).toContain("TEST FIXTURE created by the candidate — not an ORTAM file");
+    expect(pages[0].lines).toContain("Project ORTAM-DEMO-001-EDGE | Fictional Training Building A");
+    expect(pages[0].lines.filter((line) => /^S0?\d+  /.test(line))).toEqual([
+      "S7  Textured coating  Detected  Chrysotile  1%",
+      "S04  Plaster  Detected  Chrysotile  3%",
+    ]);
+  });
+
   it("returns pages without lines for a PDF that has no selectable text", async () => {
     const document = await PDFDocument.create();
     document.addPage();

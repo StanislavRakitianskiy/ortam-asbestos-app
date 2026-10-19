@@ -257,3 +257,64 @@ react-pdf in the browser (same `pdfjs-dist` version, D-004) and marks the items 
 `customTextRenderer`. "Quote found" in the viewer therefore means the same as `evidenceVerified` on the server. A quote
 on no line shows "Evidence not found on this page — verify manually"; a quote on several lines is shown as ambiguous.
 The PDF is served from `GET …/lab-documents/[docId]/file` (read-only upload, cacheable because it never changes).
+
+## D-027 · One analysis, computed on every read (2026-10-19)
+
+`analysisService` (`GET /api/projects/[id]/analysis`) loads the zones, the accepted rows of accepted lab reports, the state
+of every lab report and the stored decisions in one transaction and runs the pure `analyzeProject`
+(`src/domain/analysis.ts`): `matchProject` → `categorize` → `computeEstimate`, plus the lab-row checks and the decisions.
+Nothing derived is stored, so a zone edit, a correction or a re-extraction can never leave a stale match, category or
+amount behind. The Matching view, the report and the plans read this one result. A decision call answers with the
+recomputed analysis, so the screen never shows a state the server did not compute.
+
+## D-028 · Issue decisions: Resolve or Keep flagged, by stable key (2026-10-19)
+
+- Only **blocking** issues take a decision. Warnings (inconclusive, unsampled, inaccessible, missing quantity, …) are
+  limitations the report carries anyway; they show as "No decision needed".
+- **Resolve** (with a note) records that the employee checked the issue and it needs no mention in the report. It changes
+  no lab result or zone: a resolved conflict still leaves its layer unresolved (category C, not priced). To change a
+  finding, the employee corrects or rejects the lab row or edits the zone, and the issue disappears on its own.
+- **Keep flagged in draft** (with a note) lets the report be generated; the note goes to the report's scope limitations
+  (`flaggedLimitations`).
+- Decisions are stored by the issue key (D-010), so they survive recomputation. Each stores a snapshot of the issue (type,
+  message) and `refsKey`, the sorted zones, samples, lab rows and documents it was about. If the issue later refers to
+  other evidence (e.g. a third report adds a row to a resolved conflict), the decision no longer applies: the issue is
+  open again and the earlier decision is shown as outdated. A decision whose issue is gone (or became a warning) is listed
+  as **auto-cleared** with its snapshot; the employee can remove it.
+- Readiness: "Blocked: N open items" while any blocking issue is open, else "Draft with N flagged items", else "Ready to
+  generate". Generation is allowed whenever nothing is open.
+- Every decision moves `Project.updatedAt`, because it changes what the report says.
+
+## D-029 · Review gaps that block the draft (2026-10-19)
+
+Two blocking issue types come from the review state rather than from matching (`src/domain/labRowIssues.ts`):
+
+- `LAB_REPORT_NOT_REVIEWED`: an uploaded lab report that is still extracting, failed, or has pending rows. Its rows are
+  not used (D-024), so without this issue the draft would silently miss them.
+- `EVIDENCE_NOT_VERIFIED`: an accepted row whose quote is not on exactly one line of the cited page, or that still has
+  an open verification check. The report would cite evidence nobody can find again. The typical case is a sample ID the
+  employee relabels against the print (LAB-X prints "S7", corrected to S07): the corrected row now matches M03, and the
+  employee confirms the relabel with a resolution note.
+
+`LOW_CONFIDENCE` (low AI confidence, quote verified) is a warning only.
+
+## D-030 · "Similar ID in register" is a text hint, never a link (2026-10-19)
+
+For an unmatched lab sample the analysis lists register IDs with the same letters and numbers once separators and leading
+zeros are ignored (`S7` → `S07`, `src/domain/similarIds.ts`). It is shown as text next to the unmatched row. Matching
+itself stays exact (trim + uppercase). The row joins a zone only after the employee corrects its sample ID through the
+logged correction from phase 4, or adds the ID to a zone.
+
+## D-031 · LAB-X edge-case fixture and the ORTAM-DEMO-001-EDGE project (2026-10-19)
+
+`scripts/make-edge-fixture.ts` (`npm run fixture:edge`) draws `fixtures/test/LAB-X_edge_cases.pdf` with pdf-lib in the
+same one-table layout as LAB-A/B/C, labelled "TEST FIXTURE created by the candidate — not an ORTAM file". Its rows are
+`S7 Textured coating Detected Chrysotile 1%` (an ID the register does not have) and `S04 Plaster Detected Chrysotile
+3%` (contradicts LAB-B). Dates and metadata are fixed, so the file is byte-for-byte reproducible and its SHA-256 does
+not change when the script is re-run. It prints project `ORTAM-DEMO-001-EDGE`; the seed creates that project as a copy
+of the register, so LAB-X is never mixed into the main demo and the golden results stay as they are. In the EDGE project
+LAB-A/B/C carry the phase 3 "lab report is for project ORTAM-DEMO-001" warning, which is expected there.
+
+The integration test (`tests/server/analysisService.test.ts`) uploads the real PDFs, replays the recorded AI answers
+(and a hand-written answer for LAB-X, labelled as such in `tests/fixtures/ai/lab-x.handwritten.json`), accepts the
+verified rows and checks the golden results and the LAB-X issues from the database.

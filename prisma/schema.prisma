@@ -199,15 +199,21 @@ model Correction {
 }
 
 model ReviewIssueResolution {
-  id        String   @id @default(cuid())
-  projectId String
+  id           String   @id @default(cuid())
+  projectId    String
   /// Stable issue key from src/domain/matching.ts, e.g. UNMATCHED_LAB_SAMPLE:S08.
-  issueKey  String
+  issueKey     String
+  /// Issue type and message when the employee decided, so a decision whose issue has gone can still be shown.
+  issueType    String
+  issueMessage String
+  /// Canonical list of the zones, samples, lab rows and documents the issue was about (src/domain/issueResolution.ts).
+  /// When the current issue refers to other evidence, the decision no longer applies and the issue is open again.
+  refsKey      String
   /// RESOLVED | FLAGGED
-  decision  String
-  note      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  decision     String
+  note         String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 

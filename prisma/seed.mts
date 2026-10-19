@@ -2,12 +2,17 @@
 // saves typing while developing. It holds the project and material register from fixtures/employee_field_notes.pdf
 // and no laboratory results: those come only from uploading the lab PDFs.
 //
+// It also creates ORTAM-DEMO-001-EDGE, a separate copy of the register for the candidate-made edge-case report
+// fixtures/test/LAB-X_edge_cases.pdf (upload it there with LAB-A, LAB-B and LAB-C). LAB-X is never used in
+// ORTAM-DEMO-001, so the main demo keeps the golden results.
+//
 // Executed by Node's built-in TypeScript support, so keep to erasable syntax and avoid the @/ alias here.
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
 const CODE = "ORTAM-DEMO-001";
+const EDGE_CODE = "ORTAM-DEMO-001-EDGE";
 
 type Zone = {
   materialId: string;
@@ -125,21 +130,26 @@ const zones: Zone[] = [
   },
 ];
 
-async function main(): Promise<void> {
-  const project = await prisma.$transaction(async (tx) => {
-    // Re-running the seed resets the demo project to the field notes (cascade removes its zones and any uploads).
-    await tx.project.deleteMany({ where: { code: CODE } });
+const DEMO_PROJECT = {
+  client: "Example Property Group fictional",
+  building: "Fictional Training Building A",
+  address: "Training Site A - no real address",
+  inspectionDate: "2026-10-01",
+  scope: "Accessible areas only; illustration for hiring assessment",
+  plannedWork: "Ground corridor floor and office ceiling replacement planned",
+  jurisdictionNote: "Unspecified - no regulatory compliance conclusion permitted",
+  currency: "CAD",
+};
+
+/** Re-running the seed resets the project to the field notes (cascade removes its zones and any uploads). */
+async function seedProject(code: string, overrides: Partial<typeof DEMO_PROJECT> = {}) {
+  return prisma.$transaction(async (tx) => {
+    await tx.project.deleteMany({ where: { code } });
     return tx.project.create({
       data: {
-        code: CODE,
-        client: "Example Property Group fictional",
-        building: "Fictional Training Building A",
-        address: "Training Site A - no real address",
-        inspectionDate: "2026-10-01",
-        scope: "Accessible areas only; illustration for hiring assessment",
-        plannedWork: "Ground corridor floor and office ceiling replacement planned",
-        jurisdictionNote: "Unspecified - no regulatory compliance conclusion permitted",
-        currency: "CAD",
+        code,
+        ...DEMO_PROJECT,
+        ...overrides,
         zones: {
           create: zones.map(({ sampleIds, ...zone }, sortOrder) => ({
             ...zone,
@@ -150,7 +160,16 @@ async function main(): Promise<void> {
       },
     });
   });
+}
+
+async function main(): Promise<void> {
+  const project = await seedProject(CODE);
   console.log(`Seeded ${project.code} with ${zones.length} material zones and no lab results (${project.id}).`);
+  const edge = await seedProject(EDGE_CODE, {
+    scope:
+      "Edge-case demo of the review step. Upload LAB-A, LAB-B, LAB-C and the candidate-made test fixture fixtures/test/LAB-X_edge_cases.pdf.",
+  });
+  console.log(`Seeded ${edge.code} (edge-case demo, same register, no lab results) (${edge.id}).`);
 }
 
 main()

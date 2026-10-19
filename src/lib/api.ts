@@ -4,9 +4,11 @@ import type {
   LabResultDecisionInput,
   ManualLabResultInput,
 } from "@/domain/labReviewInput";
+import type { IssueReopenInput, IssueResolutionInput } from "@/domain/issueResolution";
 import type { ProjectCreateInput, ProjectUpdateInput, ZoneCreateInput, ZoneUpdateInput } from "@/domain/projectInput";
 import type { MaterialZone } from "@/domain/types";
 import type { ApiErrorBody } from "@/server/http";
+import type { ProjectAnalysisDto } from "@/server/services/analysisService";
 import type { AiRunDetail, LabDocumentDto } from "@/server/services/labDocumentDto";
 import type { UploadOutcome } from "@/server/services/labDocumentService";
 import type { BulkAcceptOutcome } from "@/server/services/labReviewService";
@@ -54,6 +56,7 @@ export const queryKeys = {
   project: (projectId: string) => ["project", projectId] as const,
   labDocuments: (projectId: string) => ["project", projectId, "lab-documents"] as const,
   aiRun: (projectId: string, runId: string) => ["project", projectId, "ai-runs", runId] as const,
+  analysis: (projectId: string) => ["project", projectId, "analysis"] as const,
 };
 
 const projectUrl = (projectId: string) => `/api/projects/${encodeURIComponent(projectId)}`;
@@ -108,6 +111,11 @@ export const api = {
     request<LabDocumentDto>(`${documentUrl(projectId, documentId)}/results`, { method: "POST", body: input }),
   setLabReportId: (projectId: string, documentId: string, input: LabReportIdInput) =>
     request<LabDocumentDto>(documentUrl(projectId, documentId), { method: "PATCH", body: input }),
+  getAnalysis: (projectId: string) => request<ProjectAnalysisDto>(`${projectUrl(projectId)}/analysis`),
+  decideIssue: (projectId: string, input: IssueResolutionInput) =>
+    request<ProjectAnalysisDto>(`${projectUrl(projectId)}/issue-resolutions`, { method: "PUT", body: input }),
+  reopenIssue: (projectId: string, input: IssueReopenInput) =>
+    request<ProjectAnalysisDto>(`${projectUrl(projectId)}/issue-resolutions`, { method: "DELETE", body: input }),
 };
 
 /** First message per field, for showing next to inputs. */

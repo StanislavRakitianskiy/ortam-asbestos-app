@@ -6,6 +6,10 @@
 export const REVIEW_STATUSES = ["PENDING", "ACCEPTED", "REJECTED"] as const;
 export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
 
+/** UPLOADED → EXTRACTING → NEEDS_REVIEW → ACCEPTED, or FAILED from UPLOADED/EXTRACTING. */
+export const LAB_DOCUMENT_STATUSES = ["UPLOADED", "EXTRACTING", "NEEDS_REVIEW", "ACCEPTED", "FAILED"] as const;
+export type LabDocumentStatus = (typeof LAB_DOCUMENT_STATUSES)[number];
+
 export type ReviewedRow = { reviewStatus: ReviewStatus };
 
 export type BulkCandidate = ReviewedRow & {

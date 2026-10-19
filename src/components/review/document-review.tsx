@@ -21,6 +21,10 @@ import type { LabDocumentDto, LabResultDto } from "@/server/services/labDocument
 
 const COLUMNS = 9;
 
+/** DOM IDs the Matching view scrolls to. */
+export const documentCardId = (documentId: string) => `review-document-${documentId}`;
+export const resultRowId = (resultId: string) => `review-row-${resultId}`;
+
 /** Rows grouped by normalized sample ID, groups in the order the lab printed them. */
 function groupBySample(rows: readonly LabResultDto[]): { sampleId: string; rows: LabResultDto[] }[] {
   const groups = new Map<string, LabResultDto[]>();
@@ -62,7 +66,7 @@ export function DocumentReview({
   const details = [document.labName, `${document.pageCount} page${document.pageCount === 1 ? "" : "s"}`].filter(Boolean).join(" · ");
 
   return (
-    <Card>
+    <Card id={documentCardId(document.id)} className="scroll-mt-24">
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center gap-2">
           <FileTextIcon className="size-4 text-muted-foreground" aria-hidden />
@@ -209,6 +213,7 @@ function ResultRow({ row, selected, onSelect }: { row: LabResultDto; selected: b
 
   return (
     <TableRow
+      id={resultRowId(row.id)}
       data-state={selected ? "selected" : undefined}
       aria-selected={selected}
       tabIndex={0}

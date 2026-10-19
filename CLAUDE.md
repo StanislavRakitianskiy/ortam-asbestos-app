@@ -18,7 +18,8 @@ Next.js (App Router, route handlers) + TypeScript strict · Prisma + SQLite · Z
 
 ## Commands
 docker compose up -d · npm run setup · npm run dev · npm test · npm run typecheck · npm run lint
-· npm run db:seed (dev-only demo data) · npm run template:build · npm run verify
+· npm run db:seed (dev-only demo data) · npm run fixture:edge (regenerates fixtures/test/LAB-X_edge_cases.pdf)
+· npm run template:build · npm run verify
 
 ## Layout
 - src/domain/ — pure TypeScript, no I/O: types, rates, sampleId, matching, categories, costs, reportModel, textGuards, format. Fully unit-tested.

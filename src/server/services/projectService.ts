@@ -90,10 +90,16 @@ function checkDateOrder(inspectionDate: string | null, reportDate: string | null
   }
 }
 
-async function findProjectOrThrow(tx: Tx, projectId: string): Promise<ProjectRow> {
+export async function findProjectOrThrow(tx: Tx, projectId: string): Promise<ProjectRow> {
   const project = await tx.project.findUnique({ where: { id: projectId } });
   if (project === null) throw new NotFoundError("This project does not exist. It may have been deleted.");
   return project;
+}
+
+/** The project's material zones in register order. */
+export async function findZones(tx: Tx, projectId: string): Promise<MaterialZone[]> {
+  const zones = await tx.materialZone.findMany({ where: { projectId }, orderBy: { sortOrder: "asc" }, include: withSamples });
+  return zones.map(toZone);
 }
 
 async function findZoneOrThrow(tx: Tx, projectId: string, zoneId: string) {
@@ -145,12 +151,7 @@ export function projectService(db: PrismaClient = getDb()) {
 
     async get(projectId: string): Promise<ProjectDetail> {
       const project = await findProjectOrThrow(db, projectId);
-      const zones = await db.materialZone.findMany({
-        where: { projectId },
-        orderBy: { sortOrder: "asc" },
-        include: withSamples,
-      });
-      return { project: toProjectDto(project), zones: zones.map(toZone) };
+      return { project: toProjectDto(project), zones: await findZones(db, projectId) };
     },
 
     async update(projectId: string, patch: ProjectUpdate): Promise<ProjectDto> {

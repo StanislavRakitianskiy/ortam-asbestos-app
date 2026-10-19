@@ -1,6 +1,6 @@
 # Data model
 
-SQLite through Prisma 6 (`prisma/schema.prisma`; migrations `init` and `lab_extraction`). SQLite has no enums, so every status column is
+SQLite through Prisma 6 (`prisma/schema.prisma`; migrations `init`, `lab_extraction` and `issue_resolution_snapshot`). SQLite has no enums, so every status column is
 a plain `String` and every JSON column is `String`. Their allowed values live in code and are checked with Zod at the
 service boundary:
 
@@ -141,13 +141,20 @@ Audit log of employee edits.
 
 ## ReviewIssueResolution
 
+The employee's decision on one blocking review issue (D-028). Warnings take no decision.
+
 | Column | Type | Notes |
 |---|---|---|
 | id, projectId | String | |
-| issueKey | String | stable key from `src/domain/matching.ts`, e.g. `UNMATCHED_LAB_SAMPLE:S08`; `@@unique([projectId, issueKey])` |
+| issueKey | String | stable key from `src/domain/matching.ts`, e.g. `UNMATCHED_LAB_SAMPLE:S7`; `@@unique([projectId, issueKey])` |
+| issueType, issueMessage | String | snapshot of the issue when decided, so an auto-cleared decision can still be shown |
+| refsKey | String | sorted zones, samples, lab rows and documents the issue was about (`refsKey()` in `src/domain/issueResolution.ts`); when the current issue refers to other evidence, the decision no longer applies |
 | decision | String | `RESOLVED` \| `FLAGGED` |
-| note | String | |
-| createdAt, updatedAt | DateTime | |
+| note | String | required; a `FLAGGED` note goes to the report's scope limitations |
+| createdAt, updatedAt | DateTime | `updatedAt` is shown as the decision time |
+
+Nothing derived from matching is stored: zone status, category, cost lines and issues are recomputed on every read
+(D-027). A decision whose issue no longer exists is kept and listed as auto-cleared until the employee removes it.
 
 ## ReportNarrative
 
@@ -194,3 +201,5 @@ One row per project (`projectId` is the primary key).
 - Phase 3 (`lab_extraction` migration): `LabDocument` gained `sizeBytes`, the report header columns, `documentNotesJson`,
   `warningsJson`, `errorCode`, `extractionStartedAt` and `updatedAt`, and its status `EXTRACTED` became `NEEDS_REVIEW`
   plus `ACCEPTED`; `pagesTextJson` holds lines per page. `AiRun.stopReason` and `LabResult.verificationJson` were added.
+- Phase 5 (`issue_resolution_snapshot` migration): `ReviewIssueResolution` gained `issueType`, `issueMessage` and
+  `refsKey`.

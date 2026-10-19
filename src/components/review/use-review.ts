@@ -6,7 +6,7 @@ import type { LabResultDecisionInput } from "@/domain/labReviewInput";
 import { api, queryKeys } from "@/lib/api";
 import type { LabDocumentDto } from "@/server/services/labDocumentDto";
 
-/** Puts a document returned by a review call into the cached list and refreshes the project's "Last saved". */
+/** Puts a document returned by a review call into the cached list and refreshes "Last saved" and the matching. */
 export function useApplyDocument(projectId: string) {
   const queryClient = useQueryClient();
   return (document: LabDocumentDto) => {
@@ -15,6 +15,7 @@ export function useApplyDocument(projectId: string) {
     );
     // exact: the lab documents query shares this key prefix and is already up to date.
     void queryClient.invalidateQueries({ queryKey: queryKeys.project(projectId), exact: true });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.analysis(projectId) });
   };
 }
 

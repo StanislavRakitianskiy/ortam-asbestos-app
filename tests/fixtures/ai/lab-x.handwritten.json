@@ -1,0 +1,40 @@
+{
+  "_note": "HAND-WRITTEN by the candidate, NOT recorded from the model: the answer a correct extraction gives for fixtures/test/LAB-X_edge_cases.pdf (itself a candidate-made test fixture). Test fixture only: never used by application code.",
+  "model": "claude-sonnet-5-5",
+  "promptVersion": "labExtraction.v2",
+  "output": {
+    "report": {
+      "labReportId": "LAB-X",
+      "labName": "Demo Materials Lab",
+      "projectRef": "ORTAM-DEMO-001-EDGE",
+      "issuedDate": "October 6 2026"
+    },
+    "results": [
+      {
+        "sampleId": "S7",
+        "layer": "Textured coating",
+        "resultLabel": "DETECTED",
+        "asbestosType": "Chrysotile",
+        "percentage": 1,
+        "percentageRaw": "1%",
+        "sourcePage": 1,
+        "sourceText": "S7  Textured coating  Detected  Chrysotile  1%",
+        "labNote": null,
+        "confidence": "high"
+      },
+      {
+        "sampleId": "S04",
+        "layer": "Plaster",
+        "resultLabel": "DETECTED",
+        "asbestosType": "Chrysotile",
+        "percentage": 3,
+        "percentageRaw": "3%",
+        "sourcePage": 1,
+        "sourceText": "S04  Plaster  Detected  Chrysotile  3%",
+        "labNote": null,
+        "confidence": "high"
+      }
+    ],
+    "documentNotes": []
+  }
+}
