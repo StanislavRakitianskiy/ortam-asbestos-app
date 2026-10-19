@@ -1,0 +1,14 @@
+services:
+  gotenberg:
+    # Pinned 8.x tag so DOCX -> PDF output does not change underneath us.
+    image: gotenberg/gotenberg:8.38.1
+    ports:
+      # Host 3001 because Next.js uses 3000. Bound to loopback: Gotenberg has no authentication.
+      - "127.0.0.1:3001:3000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--output", "/dev/null", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
