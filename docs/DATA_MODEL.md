@@ -190,12 +190,12 @@ The report status stays "Draft pending human and professional review" whatever i
 |---|---|---|
 | id, projectId | String | |
 | number | Int | `@@unique([projectId, number])` |
-| snapshotJson | String | canonical JSON of everything the report shows |
+| snapshotJson | String | canonical JSON of `{ model, templateSha256, rendererVersion }` (D-039); the files are rendered from it |
 | snapshotHash | String | SHA-256 of `snapshotJson`; preview, DOCX and PDF must share it |
 | status | String | `GENERATING` \| `READY` \| `FAILED` |
-| error | String? | |
-| docxPath, pdfPath | String? | files under `storage/reports/` |
-| createdAt | DateTime | |
+| error | String? | readable failure reason; null unless `FAILED` |
+| docxPath, pdfPath | String? | `reports/<projectId>/rev-<n>/report.docx\|pdf`, relative to `STORAGE_DIR`; null unless `READY` |
+| createdAt | DateTime | printed in the report as "Generated …" |
 
 ## Deviations from the phase 2 brief
 

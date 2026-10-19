@@ -1,10 +1,10 @@
 import type { z } from "zod";
-import { AiStepError, ConflictError, NotFoundError, ValidationError } from "@/server/errors";
+import { AiStepError, ConflictError, NotFoundError, ReportStepError, ValidationError } from "@/server/errors";
 
 /** JSON body of every non-2xx API response. */
 export type ApiErrorBody = {
   error: string;
-  /** Machine-readable reason for some 409 answers and the AI error code of a 502. */
+  /** Machine-readable reason for some 409 answers and the AI or report step error code of a 502. */
   code?: string;
   fieldErrors?: Record<string, string[]>;
   formErrors?: string[];
@@ -40,7 +40,9 @@ export function errorResponse(error: unknown): Response {
   }
   if (error instanceof NotFoundError) return json({ error: error.message } satisfies ApiErrorBody, 404);
   if (error instanceof ConflictError) return json({ error: error.message, code: error.code } satisfies ApiErrorBody, 409);
-  if (error instanceof AiStepError) return json({ error: error.message, code: error.code } satisfies ApiErrorBody, 502);
+  if (error instanceof AiStepError || error instanceof ReportStepError) {
+    return json({ error: error.message, code: error.code } satisfies ApiErrorBody, 502);
+  }
   console.error(error);
   return json({ error: "Something went wrong on the server. Please try again." } satisfies ApiErrorBody, 500);
 }
@@ -54,4 +56,20 @@ export function handle<A extends unknown[]>(handler: (...args: A) => Promise<Res
       return errorResponse(error);
     }
   };
+}
+
+/**
+ * A stored file that never changes (a report revision's DOCX or PDF), so the browser may cache it. `inline` lets the
+ * PDF viewer load it; downloads are attachments named after the revision.
+ */
+export function fileResponse(file: { fileName: string; contentType: string; bytes: Uint8Array }, disposition: "inline" | "attachment"): Response {
+  const asciiName = file.fileName.replace(/[^A-Za-z0-9._-]/g, "_");
+  return new Response(new Blob([new Uint8Array(file.bytes)], { type: file.contentType }), {
+    headers: {
+      "Content-Type": file.contentType,
+      "Content-Disposition": `${disposition}; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(file.fileName)}`,
+      "Cache-Control": "private, max-age=31536000, immutable",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
 }

@@ -402,3 +402,73 @@ counts) are accepted; any currency or money-formatted amount is always flagged. 
 `ReviewChecklist.reviewedAt` (DateTime) became `reviewedOn`, a `YYYY-MM-DD` text like the project dates (D-013); migration
 `narrative_draft` also adds `updatedAt`. Nothing wrote the table before, so no date is lost. The whole checklist is sent on
 each save, and saving moves `Project.updatedAt` because the report states it.
+
+## D-038 · Word template built from the master by a script (2026-10-19)
+
+`scripts/build-template.ts` (`npm run template:build`) turns `fixtures/master_asbestos_report.docx` into
+`templates/report_template.docx`, which is committed. Only `word/document.xml` changes; styles, fonts, numbering and
+theme are copied byte for byte (a test checks this).
+
+- Each placeholder is found by the exact text of its `<w:t>`; a missing or repeated one stops the build with its name
+  (`Placeholder not found in master: [Material ID] [Floor] [Room] [Description]`). The build also fails if any
+  `[bracketed]` text is left. Besides the placeholders it fills the master's fixed `2500.00` and `1200.00`, its two
+  instruction paragraphs ("Use this structure…", "Repeat this record…"), the "Version 1" line and the "Contingency at 20
+  percent" label. The title loses the word "model", which describes the master, not a report.
+- Lists use docxtemplater's paragraphLoop: a placeholder paragraph becomes three copies of itself, `{#list}`, `{text}`,
+  `{/list}`, so each item is its own paragraph with the master's formatting. The findings table with a new Heading2
+  "Material zone M01 — …" repeats per zone; Lab evidence and Result detail have one paragraph per layer. Lists in
+  Scope limitations and Assumptions and exclusions use the master's own ListBullet style.
+- The cost table's first sample row is the loop row; the second ("[Unmeasured ID] Unknown Not priced …") is removed
+  because unpriced lines come from the same loop and print Unknown / Not priced. Removal and replacement subtotals are
+  copies of the "Measured zone subtotal" row.
+- Appendices A–D (lab source references, sample register, employee corrections, review items) are new tables in the
+  master's `LightShading-Accent1` table and cell markup, 9 pt because they have six columns, widths summing to the text
+  width (8640 twips). An empty appendix prints one sentence instead of an empty table. `{#hasPlans}` holds a floor plan
+  appendix for the mapping bonus; it is empty until plans exist.
+- docxtemplater's default parser has no `a.b` paths (that needs `angular-expressions`), so `toTemplateData`
+  (`src/domain/templateData.ts`) builds flat, finished text. Keys are unique per loop level because docxtemplater looks a
+  missing key up in the outer levels; a test parses the template's tags and checks each one exists at its own level.
+  `renderDocx` has a `nullGetter` that throws with the tag name, so "undefined" can never reach a report. A table cell
+  must keep at least one paragraph, so every cell list has at least one entry ("No sample taken" …).
+
+## D-039 · Report revisions: one snapshot, one hash, idempotent generation (2026-10-19)
+
+- The snapshot is the canonical JSON (`src/domain/canonicalJson.ts`: keys sorted at every level, plain JSON only) of
+  `{ model, templateSha256, rendererVersion }`. Its SHA-256 is the snapshot hash. The revision number and the generation
+  time are printed but not hashed, so unchanged data gives the same hash.
+- `templateSha256` makes a rebuilt template mark earlier revisions outdated. `REPORT_RENDERER_VERSION` does the same for
+  a change of `toTemplateData` wording; a golden test records the output hash per version and fails until the version is
+  raised.
+- DOCX and PDF are rendered from the stored `snapshotJson` (parsed back), not from a second database read, so the files
+  show exactly the hashed data. Files are written read-only into a temporary folder that is renamed to
+  `storage/reports/<projectId>/rev-<n>/`; a failed step removes them and stores the revision as `FAILED` with the
+  message. Downloads serve only `READY` revisions.
+- `POST /api/projects/[id]/revisions` waits for the result (like D-036; conversion takes seconds). When the latest
+  `READY` revision has the current hash it is returned and nothing is generated. A `GENERATING` revision younger than
+  5 minutes answers 409 `GENERATION_RUNNING`; an older one was cut off by a restart and becomes `FAILED` on the next read.
+  Retry is a new attempt with the next number; failed numbers stay in the history.
+- `GET /api/projects/[id]/report-status` compares the current hash with the latest `READY` revision: `generating`, then
+  `current`, then `failed` (last attempt failed after the latest ready one), then `outdated`, else `none`. The Preview
+  tab dims an outdated PDF, disables the current downloads and offers the old files only as "Revision N (outdated)".
+
+## D-040 · What blocks generation (2026-10-19)
+
+- Open blocking review items (readiness `BLOCKED`, D-028): 409 `REPORT_BLOCKED`.
+- A narrative `FORBIDDEN_CLAIM` (asbestos-free, compliance, clearance, safety; D-034): the report must never make such a
+  claim, so it blocks generation although it only warns in the Draft. Other guardrail warnings do not block; the Preview
+  tab shows their count.
+- Empty narrative texts do not block. The report prints "Narrative not written yet." in their place and the Preview tab
+  lists them, so a missing text is visible rather than silently left out.
+
+## D-041 · `.gitignore` ignores only the root storage folder (2026-10-19)
+
+The runtime-data rule was `storage/`, which also matched `src/server/storage/` and kept `src/server/storage/uploads.ts`
+out of every commit since phase 3. It is now `/storage/`.
+
+## D-042 · PDF conversion details (2026-10-19)
+
+`convertDocxToPdf` posts the DOCX as the form field `files` to Gotenberg's `/forms/libreoffice/convert` with a 60 s
+limit for the whole call, and checks the answer opens in pdf-lib. Connection refused reads "PDF converter is not running
+— start it with docker compose up -d". The master's styles set Arial, which LibreOffice in Gotenberg
+replaces with the metrically compatible Liberation Sans, so the PDF lays out close to Word but not pixel-identical. `npm test` uses a fake converter; the real
+conversion test runs with `GOTENBERG_IT=1 npm test`.

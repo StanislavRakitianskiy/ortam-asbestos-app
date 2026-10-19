@@ -17,6 +17,7 @@ import type { BulkAcceptOutcome } from "@/server/services/labReviewService";
 import type { NarrativeDraftResult } from "@/server/services/narrativeService";
 import type { ProjectDetail, ProjectDto, ProjectSummary } from "@/server/services/projectService";
 import type { ReportDraftDto } from "@/server/services/reportService";
+import type { GenerateResult, ReportStatusDto } from "@/server/services/revisionService";
 
 /** A failed API call with the server's readable message and, for HTTP 400, the invalid fields. */
 export class ApiError extends Error {
@@ -62,6 +63,7 @@ export const queryKeys = {
   aiRun: (projectId: string, runId: string) => ["project", projectId, "ai-runs", runId] as const,
   analysis: (projectId: string) => ["project", projectId, "analysis"] as const,
   report: (projectId: string) => ["project", projectId, "report"] as const,
+  reportStatus: (projectId: string) => ["project", projectId, "report-status"] as const,
 };
 
 const projectUrl = (projectId: string) => `/api/projects/${encodeURIComponent(projectId)}`;
@@ -72,6 +74,10 @@ const resultUrl = (projectId: string, documentId: string, resultId: string) =>
 
 /** The uploaded PDF as stored, for the source viewer and "Open PDF". */
 export const labDocumentFileUrl = (projectId: string, documentId: string) => `${documentUrl(projectId, documentId)}/file`;
+
+/** A ready revision's Word or PDF file: a download, or `inline` for the PDF preview. */
+export const revisionFileUrl = (revisionId: string, kind: "docx" | "pdf", inline = false) =>
+  `/api/revisions/${encodeURIComponent(revisionId)}/${kind}${inline ? "?inline=1" : ""}`;
 
 export const api = {
   listProjects: () => request<ProjectSummary[]>("/api/projects"),
@@ -130,6 +136,8 @@ export const api = {
     request<ReportDraftDto>(`${projectUrl(projectId)}/report/narrative/reset`, { method: "POST", body: input }),
   saveChecklist: (projectId: string, input: ReviewChecklistInput) =>
     request<ReportDraftDto>(`${projectUrl(projectId)}/report/checklist`, { method: "PUT", body: input }),
+  getReportStatus: (projectId: string) => request<ReportStatusDto>(`${projectUrl(projectId)}/report-status`),
+  generateReport: (projectId: string) => request<GenerateResult>(`${projectUrl(projectId)}/revisions`, { method: "POST" }),
 };
 
 /** First message per field, for showing next to inputs. */

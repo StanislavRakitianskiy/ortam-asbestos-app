@@ -3,12 +3,12 @@
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { DraftView } from "@/components/report/draft-view";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PreviewView } from "@/components/report/preview-view";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type View = "draft" | "preview";
 
-/** The report: the editable draft now; the generated revision with its PDF preview and downloads in the next phase. */
+/** The report: the editable draft, and the generated revision with its PDF preview and downloads. */
 export function ReportTab({ projectId }: { projectId: string }) {
   const searchParams = useSearchParams();
   const [view, setViewState] = useState<View>(searchParams.get("view") === "preview" ? "preview" : "draft");
@@ -30,15 +30,7 @@ export function ReportTab({ projectId }: { projectId: string }) {
         <DraftView projectId={projectId} />
       </TabsContent>
       <TabsContent value="preview" className="pt-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Preview and downloads: not built yet</CardTitle>
-            <CardDescription>Coming in the next phase. No report revision has been generated for this project.</CardDescription>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            Planned: generate one report revision from this draft, preview its PDF and download the matching Word and PDF files.
-          </CardContent>
-        </Card>
+        <PreviewView projectId={projectId} onOpenDraft={() => setView("draft")} />
       </TabsContent>
     </Tabs>
   );

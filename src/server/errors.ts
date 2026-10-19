@@ -66,6 +66,20 @@ export class ConflictError extends Error {
 }
 
 /**
+ * A report generation step failed: the template, the PDF converter or the file storage. Becomes HTTP 502 with the
+ * readable message and a code; the revision is stored as FAILED.
+ */
+export class ReportStepError extends Error {
+  readonly code: string;
+
+  constructor(message: string, code: string) {
+    super(message);
+    this.name = "ReportStepError";
+    this.code = code;
+  }
+}
+
+/**
  * An AI step failed: no key, an API error, a refusal or an unusable answer. Becomes HTTP 502 with the readable message
  * and the AI error code; the failed AiRun is kept for "View raw AI response".
  */

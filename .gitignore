@@ -35,7 +35,7 @@ yarn-error.log*
 !.env.example
 
 # runtime data
-storage/
+/storage/
 prisma/dev.db*
 
 # vercel
