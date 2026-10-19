@@ -76,9 +76,10 @@ export interface EstimateOptions {
   rateCard?: RateCard;
 }
 
-type UnresolvedStatus = Exclude<ZoneStatus, "DETECTED" | "NOT_DETECTED">;
+export type UnresolvedStatus = Exclude<ZoneStatus, "DETECTED" | "NOT_DETECTED">;
 
-const UNRESOLVED_TEXT: Record<UnresolvedStatus, string> = {
+/** Why an unresolved zone has no price, e.g. "inconclusive lab result". Also used by the report text. */
+export const UNRESOLVED_TEXT: Record<UnresolvedStatus, string> = {
   INCONCLUSIVE: "inconclusive lab result",
   CONFLICT: "conflicting lab results",
   AWAITING_RESULT: "lab result not yet received",

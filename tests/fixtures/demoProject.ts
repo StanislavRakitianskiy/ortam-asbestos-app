@@ -2,7 +2,10 @@
  * TEST FIXTURE. The supplied demo project typed by hand from fixtures/employee_field_notes.pdf and the
  * LAB-A/B/C PDFs. Lab results may appear only in tests and test fixtures, never in application code.
  */
+import { analyzeProject, type AnalysisInput, type ProjectAnalysis } from "@/domain/analysis";
 import { formatResultLabel } from "@/domain/format";
+import type { LabDocumentState } from "@/domain/labRowIssues";
+import type { ReportLabDocument, ReportProject } from "@/domain/reportModel";
 import type { AcceptedLabResult, MaterialZone } from "@/domain/types";
 
 /** Fresh copies on every call, so a test can change a zone without affecting others. */
@@ -240,6 +243,65 @@ export function withZone(
 ): MaterialZone[] {
   if (!zones.some((zone) => zone.materialId === materialId)) throw new Error(`No zone ${materialId} in fixture`);
   return zones.map((zone) => (zone.materialId === materialId ? { ...zone, ...patch } : zone));
+}
+
+/** The three supplied lab reports, fully reviewed. */
+export function demoDocuments(): LabDocumentState[] {
+  return ["LAB-A", "LAB-B", "LAB-C"].map((id) => ({
+    id: `doc-${id.toLowerCase()}`,
+    fileName: `${id}_fictional_lab_report.pdf`,
+    labReportId: id,
+    status: "ACCEPTED",
+    pendingRows: 0,
+  }));
+}
+
+/** Analysis input for the demo: every row accepted with verified evidence, no decisions. */
+export function demoAnalysisInput(overrides: Partial<AnalysisInput> = {}): AnalysisInput {
+  const results = overrides.results ?? demoResults();
+  return {
+    zones: demoZones(),
+    results,
+    evidence: results.map((row) => ({ labResultId: row.id, evidenceVerified: true, confidence: "HIGH", flags: [] })),
+    documents: demoDocuments(),
+    resolutions: [],
+    ...overrides,
+  };
+}
+
+export function demoAnalysis(overrides: Partial<AnalysisInput> = {}): ProjectAnalysis {
+  return analyzeProject(demoAnalysisInput(overrides));
+}
+
+/** Project information from fixtures/employee_field_notes.pdf (as in the dev seed). */
+export function demoReportProject(): ReportProject {
+  return {
+    code: "ORTAM-DEMO-001",
+    client: "Example Property Group fictional",
+    building: "Fictional Training Building A",
+    address: "Training Site A - no real address",
+    inspectionDate: "2026-10-01",
+    reportDate: null,
+    preparedBy: "",
+    reviewedBy: null,
+    scope: "Accessible areas only; illustration for hiring assessment",
+    plannedWork: "Ground corridor floor and office ceiling replacement planned",
+    limitations: "",
+    jurisdictionNote: "Unspecified - no regulatory compliance conclusion permitted",
+    currency: "CAD",
+  };
+}
+
+export function demoReportDocuments(): ReportLabDocument[] {
+  return demoDocuments().map((document, index) => ({
+    id: document.id,
+    fileName: document.fileName,
+    labReportId: document.labReportId,
+    labName: "Fictional laboratory",
+    issuedDate: null,
+    sha256: `${index}`.repeat(64),
+    pageCount: 1,
+  }));
 }
 
 export function byMaterial<T extends { materialId: string | null }>(items: readonly T[], materialId: string): T {

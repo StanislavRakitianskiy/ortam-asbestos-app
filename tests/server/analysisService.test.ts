@@ -1,17 +1,13 @@
 import { mkdtempSync, rmSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { formatCad } from "@/domain/format";
-import { zoneCreateSchema } from "@/domain/projectInput";
 import { ConflictError, NotFoundError, ValidationError } from "@/server/errors";
 import { analysisService, type ProjectAnalysisDto } from "@/server/services/analysisService";
-import { labDocumentService, type UploadFile } from "@/server/services/labDocumentService";
+import { labDocumentService } from "@/server/services/labDocumentService";
 import { labReviewService } from "@/server/services/labReviewService";
-import { projectService } from "@/server/services/projectService";
-import { demoZones } from "../fixtures/demoProject";
-import { configuredKey, fakeMessage, loadAiFixture, scriptedSender } from "../helpers/fakeAi";
+import { LAB_X_FILE, SUPPLIED_LAB_FILES, createReviewedProject, type LabFile } from "../helpers/reviewedProject";
 import { createTestDb, type TestDb } from "../helpers/testDb";
 
 /**
@@ -36,51 +32,13 @@ beforeEach(async () => {
   await testDb.db.project.deleteMany();
 });
 
-type LabFile = { path: string; answer: string };
-
-const SUPPLIED: LabFile[] = [
-  { path: "fixtures/LAB-A_fictional_lab_report.pdf", answer: "lab-a.recorded" },
-  { path: "fixtures/LAB-B_fictional_lab_report.pdf", answer: "lab-b.recorded" },
-  { path: "fixtures/LAB-C_fictional_lab_report.pdf", answer: "lab-c.recorded" },
-];
-/** Candidate-made test fixture (scripts/make-edge-fixture.ts) with a hand-written AI answer. */
-const LAB_X: LabFile = { path: "fixtures/test/LAB-X_edge_cases.pdf", answer: "lab-x.handwritten" };
+const SUPPLIED = SUPPLIED_LAB_FILES;
+const LAB_X = LAB_X_FILE;
 
 /** A project with the supplied material register and the given lab reports uploaded, extracted and accepted. */
 async function reviewedProject(code: string, files: readonly LabFile[]) {
-  const db = testDb.db;
-  const project = await db.project.create({ data: { code, client: "Example Property Group fictional", building: "Fictional Training Building A" } });
-  for (const zone of demoZones()) {
-    const { materialId, description, floor, location, sampleIds, quantity, unit, condition, plannedDisturbance, rateRef, accessible, notes } = zone;
-    const input = { materialId, description, floor, location, sampleIds, quantity, unit, condition, plannedDisturbance, rateRef, accessible, notes };
-    await projectService(db).addZone(project.id, zoneCreateSchema.parse(input));
-  }
-
-  const review = labReviewService(db);
-  const documentIds: Record<string, string> = {};
-  for (const file of files) {
-    const bytes = new Uint8Array(await readFile(file.path));
-    const queue: (() => Promise<void>)[] = [];
-    const documents = labDocumentService({
-      db,
-      storageDir,
-      extraction: () => ({
-        model: "claude-test-model",
-        keyStatus: configuredKey,
-        send: scriptedSender(fakeMessage(JSON.stringify(loadAiFixture(file.answer).output))),
-      }),
-      schedule: (task) => queue.push(task),
-    });
-    const upload: UploadFile = { name: path.basename(file.path), type: "application/pdf", size: bytes.byteLength, read: async () => bytes };
-    const [outcome] = await documents.upload(project.id, [upload]);
-    if (outcome.outcome !== "created") throw new Error(`upload of ${file.path} failed`);
-    while (queue.length > 0) await queue.shift()!();
-    const { document } = await review.acceptVerified(project.id, outcome.document.id);
-    // Every row of the recorded answers is verified against the PDF text, so the whole report is accepted.
-    expect(document.status, file.path).toBe("ACCEPTED");
-    documentIds[file.answer] = document.id;
-  }
-  return { projectId: project.id, documentIds, review, analysis: analysisService(db) };
+  const { projectId, documentIds } = await createReviewedProject(testDb.db, storageDir, code, files);
+  return { projectId, documentIds, review: labReviewService(testDb.db), analysis: analysisService(testDb.db) };
 }
 
 const zoneRow = (analysis: ProjectAnalysisDto, materialId: string) => {

@@ -1,6 +1,6 @@
 # Data model
 
-SQLite through Prisma 6 (`prisma/schema.prisma`; migrations `init`, `lab_extraction` and `issue_resolution_snapshot`). SQLite has no enums, so every status column is
+SQLite through Prisma 6 (`prisma/schema.prisma`; migrations `init`, `lab_extraction`, `issue_resolution_snapshot` and `narrative_draft`). SQLite has no enums, so every status column is
 a plain `String` and every JSON column is `String`. Their allowed values live in code and are checked with Zod at the
 service boundary:
 
@@ -93,6 +93,7 @@ One row per model call, successful or not.
 | stopReason | String? | API `stop_reason`, e.g. `end_turn`, `max_tokens`, `refusal` |
 | promptVersion | String | versioned prompt file name, e.g. `labExtraction.v2` |
 | rawResponse | String? | the whole API message as received (JSON); `NULL` when no answer arrived |
+| inputHash | String? | NARRATIVE runs: SHA-256 of the facts the AI was given (`narrativeFacts`); a different current hash means the draft is outdated (D-035). `NULL` for extraction runs |
 | createdAt | DateTime | |
 
 ## LabResult
@@ -161,12 +162,14 @@ Nothing derived from matching is stored: zone status, category, cost lines and i
 | Column | Type | Notes |
 |---|---|---|
 | id, projectId | String | |
-| section | String | report section key |
-| itemKey | String | e.g. a zone ID; `""` for section-level text. Not nullable because SQLite treats NULLs as distinct in a unique index. `@@unique([projectId, section, itemKey])` |
-| aiText | String? | the AI draft as generated |
-| text | String | current text |
+| section | String | `executiveSummary`, `zoneInterpretation`, `zoneReason`, `zoneUncertainty`, `zoneFollowUp`, `recommendation`, `limitations` (`src/domain/narrative.ts`) |
+| itemKey | String | the zone ID for the zone sections and `recommendation`; `""` for section-level text. Not nullable because SQLite treats NULLs as distinct in a unique index. `@@unique([projectId, section, itemKey])` |
+| aiText | String? | the latest AI draft as generated; `NULL` when the employee wrote the text without one |
+| text | String | current text; a new AI draft replaces it only while `source` is `AI_DRAFT` (D-035) |
 | source | String | `AI_DRAFT` \| `EDITED` |
 | updatedAt | DateTime | |
+
+Narrative edits are not logged as `Correction` rows: `aiText` keeps the AI original. Deleting a zone deletes its slots.
 
 ## ReviewChecklist
 
@@ -176,7 +179,10 @@ One row per project (`projectId` is the primary key).
 |---|---|
 | samplesChecked, layersChecked, quantitiesChecked, costsChecked, narrativeChecked | Boolean, default `false` |
 | reviewerName | String? |
-| reviewedAt | DateTime? |
+| reviewedOn | String? (calendar date `YYYY-MM-DD`, D-037) |
+| updatedAt | DateTime |
+
+The report status stays "Draft pending human and professional review" whatever is checked.
 
 ## ReportRevision
 
@@ -203,3 +209,5 @@ One row per project (`projectId` is the primary key).
   plus `ACCEPTED`; `pagesTextJson` holds lines per page. `AiRun.stopReason` and `LabResult.verificationJson` were added.
 - Phase 5 (`issue_resolution_snapshot` migration): `ReviewIssueResolution` gained `issueType`, `issueMessage` and
   `refsKey`.
+- Phase 6 (`narrative_draft` migration): `AiRun.inputHash` added; `ReviewChecklist.reviewedAt` (DateTime) replaced by
+  `reviewedOn` (`YYYY-MM-DD` text) and `updatedAt` added.

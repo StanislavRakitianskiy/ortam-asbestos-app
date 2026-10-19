@@ -5,12 +5,12 @@ import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeftIcon, LoaderCircleIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LabReportsTab, useLabDocuments } from "@/components/lab-reports/lab-reports-tab";
 import { MaterialsTab } from "@/components/projects/materials-tab";
 import { ProjectForm } from "@/components/projects/project-form";
 import { UnsavedChangesProvider, useUnsavedChanges } from "@/components/projects/unsaved-changes";
+import { ReportTab } from "@/components/report/report-tab";
 import { ReviewTab, pendingRowCount } from "@/components/review/review-tab";
 import { ApiError, api, queryKeys } from "@/lib/api";
 import { formatDateTime } from "@/lib/dates";
@@ -25,10 +25,6 @@ const TABS = [
 type TabValue = (typeof TABS)[number]["value"];
 
 const isTab = (value: string | null): value is TabValue => TABS.some((tab) => tab.value === value);
-
-const PLANNED: Record<Exclude<TabValue, "project" | "materials" | "lab-reports" | "review">, string> = {
-  report: "Generate the report revision, preview its PDF and download the matching Word and PDF files.",
-};
 
 export function ProjectWorkspace({ projectId }: { projectId: string }) {
   return (
@@ -147,19 +143,9 @@ function Workspace({ projectId }: { projectId: string }) {
         <TabsContent value="review" className="pt-4">
           <ReviewTab projectId={project.id} />
         </TabsContent>
-        {(Object.keys(PLANNED) as (keyof typeof PLANNED)[]).map((value) => (
-          <TabsContent key={value} value={value} className="pt-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>{TABS.find((item) => item.value === value)?.label}: not built yet</CardTitle>
-                <CardDescription>
-                  Coming in a later phase. Nothing on this tab has been run or checked for this project.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="text-sm text-muted-foreground">Planned: {PLANNED[value]}</CardContent>
-            </Card>
-          </TabsContent>
-        ))}
+        <TabsContent value="report" className="pt-4">
+          <ReportTab projectId={project.id} />
+        </TabsContent>
       </Tabs>
     </div>
   );

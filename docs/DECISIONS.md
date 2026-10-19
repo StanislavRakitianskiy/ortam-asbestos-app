@@ -318,3 +318,87 @@ LAB-A/B/C carry the phase 3 "lab report is for project ORTAM-DEMO-001" warning, 
 The integration test (`tests/server/analysisService.test.ts`) uploads the real PDFs, replays the recorded AI answers
 (and a hand-written answer for LAB-X, labelled as such in `tests/fixtures/ai/lab-x.handwritten.json`), accepts the
 verified rows and checks the golden results and the LAB-X issues from the database.
+
+## D-032 · ReportModel: one deterministic source for the report (2026-10-19)
+
+`buildReportModel` (`src/domain/reportModel.ts`) is pure and has the sections of the Word master. Zones, layers, sources,
+categories, amounts, limitations, exclusions and appendices come from `analyzeProject`; the model is built on every read,
+like the analysis (D-027), so a data change can never leave stale facts in the report.
+
+- It takes the analysis with the employee's decisions already joined, not the raw `ReviewIssueResolution` rows:
+  `applyResolutions` has already compared `refsKey`, and the raw rows could show an outdated decision as if it applied. The
+  appendix lists current, outdated and auto-cleared decisions with their state.
+- The second executive summary paragraph (counts, amounts, unpriced and unresolved zones) is built in code
+  (`factsParagraph` in `src/domain/reportText.ts`) and is read-only in the UI. "Samples" counts distinct registered sample
+  IDs; layer results are counted per sample, so S02 adds two.
+- Disclaimers, the scenario text and the status are constants in `reportText.ts`, worded after the master. The status is
+  always "Draft pending human and professional review"; the checklist only states which items were checked.
+- `Project.reviewedBy` ("Reviewed by … / pending" in the project information) and the checklist reviewer are separate:
+  the first is the human or professional reviewer of the report, the second is who ticked the in-app checks.
+
+## D-033 · What the narrative AI sees, and which numbers it may write (2026-10-19)
+
+The AI gets `narrativeFacts(model)` only: zones, layers, report IDs and pages, categories with their code-built reason,
+missing information and limitations. No PDF text, no person's name (client, preparer, reviewer), no earlier narrative and
+no money: the cost status is a phrase ("Not priced (quantity unknown)").
+
+CLAUDE.md says the AI never writes numbers; the phase 6 brief says numbers that are not in the ReportModel are flagged.
+The guard compares numbers with the AI facts, not the whole model, because the model contains the amounts and
+"32,808.00" in a narrative would otherwise pass. Non-money numbers from the facts (quantities, lab percentages, pages,
+counts) are accepted; any currency or money-formatted amount is always flagged. Numbers written as words are not checked.
+
+## D-034 · Guardrails: warnings on every read, structure checked hard (2026-10-19)
+
+`src/domain/textGuards.ts` has two kinds of checks.
+
+- `checkDraftStructure` on the AI answer: an unknown, missing or duplicated material ID, or a category other than the
+  computed one, makes the answer unusable. It is retried once with the problems (as in D-018) and then rejected as a
+  whole: a text for an unknown zone has nowhere to go, and the category is never the AI's to choose.
+- `checkNarrative` on the stored texts: warnings shown beside the text, never stored and never blocking a save. They run
+  on every read, so they cover employee edits and data changes after the draft. Rules: a zone's findings texts (the four
+  together) and its recommendation name its material ID, location as entered and every sample ID; a summary or
+  limitations text that names a zone also gives its location and samples; letters-plus-digits tokens (S08, M09) must exist
+  in the facts; numbers and money as in D-033; a zone text may not name another category or use its wording; a category D
+  zone says "sampled material"; forbidden claims.
+- Forbidden claims: asbestos-free / free of asbestos / no asbestos in the building and close variants are accepted only
+  when a negation (not, no, cannot, …) stands before them in the same sentence, within 12 words ("does not establish that
+  the building is free of asbestos"). Compliance, clearance, "cleared", "safe to occupy" and prescribed removal are always
+  flagged, negated or not.
+
+## D-035 · Narrative storage, redraft and employee edits (2026-10-19)
+
+- One `ReportNarrative` row per slot: `executiveSummary`, `zoneInterpretation`, `zoneReason`, `zoneUncertainty`,
+  `zoneFollowUp`, `recommendation` (itemKey = zone ID, which survives a material ID rename) and `limitations`.
+  Paragraphs are separated by a blank line, limitations by a line break.
+- A new AI draft writes `aiText` of every slot but replaces `text` only where the source is still `AI_DRAFT`; texts the
+  employee edited are kept (as D-023 keeps reviewed lab rows). "Reset to AI draft" takes the current `aiText`.
+- Prose edits need no reason and write no `Correction`: the AI original stays in `aiText`, and the correction log is
+  for extracted lab data. A text equal to the AI draft counts as the AI draft again; emptying a slot that has no AI draft
+  deletes it.
+- Every narrative change moves `Project.updatedAt`. Deleting a zone deletes its slots; a draft removes slots of zones that
+  no longer exist.
+- `AiRun.inputHash` is the SHA-256 of the facts a NARRATIVE run was given. When the latest successful run's hash differs
+  from the current facts, the Draft tab says the draft is outdated.
+
+## D-036 · Narrative call: shared transport, synchronous request (2026-10-19)
+
+- The extraction's call logic moved to `src/server/ai/structuredCall.ts` (`runStructuredCall`): `messages.create` with a
+  `json_schema` format from `z.toJSONSchema` (D-016), server-side fallback (D-017), one fresh retry for an unusable
+  answer, one `AiRun` per call. `narrative.v1` uses effort `medium` and `max_tokens` 16000.
+- "Draft narrative with AI" is a POST that waits for the answer (spinner, usually well under a minute). There is no
+  document status to poll as in D-019. A failure answers HTTP 502 with the readable message and the AI error code; nothing
+  is stored, the failed `AiRun` stays for "View raw AI response", and after a reload the Draft tab shows the last failed
+  run with Retry.
+- A NARRATIVE run still `RUNNING` and younger than 10 minutes makes a second draft answer 409 `DRAFT_RUNNING`; an older
+  one is marked failed on the next read. The check is not atomic: two clicks in the same instant from two tabs can both
+  run; slots are unique per project, so the later answer simply wins.
+- Test answers: `tests/fixtures/ai/narrative.recorded.json` is one real answer of `narrative.v1` for the demo project.
+  Its `inputHash` equals the hash of the facts the tests build, so it was drafted from exactly those facts; it passes every
+  guardrail without a warning. `narrative.handwritten.json` and the tampered `narrative.tampered-asbestos-free.json` are
+  written by hand for the rule tests.
+
+## D-037 · The review checklist date is a calendar day (2026-10-19)
+
+`ReviewChecklist.reviewedAt` (DateTime) became `reviewedOn`, a `YYYY-MM-DD` text like the project dates (D-013); migration
+`narrative_draft` also adds `updatedAt`. Nothing wrote the table before, so no date is lost. The whole checklist is sent on
+each save, and saving moves `Project.updatedAt` because the report states it.

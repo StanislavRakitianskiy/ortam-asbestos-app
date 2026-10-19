@@ -1,0 +1,108 @@
+{
+  "_note": "Recorded real model output of the narrative.v1 prompt for the supplied demo project ORTAM-DEMO-001 (the three supplied lab reports, all rows accepted). Test fixture only: never used by application code. Do not edit; derive tampered copies instead.",
+  "model": "claude-sonnet-5-5",
+  "promptVersion": "narrative.v1",
+  "responseId": "msg_011CgBhcsZKGtrCkCmJE7jiN",
+  "stopReason": "end_turn",
+  "recordedAt": "2026-10-19T13:48:44Z",
+  "inputHash": "5c6bd33850c2e6174795387bd7776b65d3bd97dc80c64284068f5077594a86f4",
+  "output": {
+    "executiveSummary": [
+      "Asbestos was reported by the laboratory in four material zones. M01 Pipe insulation (B01 mechanical room, sample S01), M02 Floor tile and adhesive (G01 corridor, sample S02) and M03 Textured ceiling (G02 office, samples S03 and S07) are in category A and need priority professional review before any affected work. M05 Cement panel (E01 east elevation, sample S05) is in category B and is flagged for professional management review. For M02 the adhesive layer was detected and the floor tile layer was not detected. The planned ground corridor floor and office ceiling replacement affects M02 and M03.",
+      "M04 Wall plaster (G03 meeting room, sample S04) is category D: asbestos was not detected in the sampled material only. M06 Insulation fragment (B02 service room, sample S06) has an inconclusive result, and M07 Uninspected riser material (B03 locked riser, no samples) was inaccessible and not sampled. Both are category C and stay unresolved. The assessment covers accessible areas only, hidden materials were not inspected, and all text is a draft for professional review."
+    ],
+    "perZone": [
+      {
+        "materialId": "M01",
+        "interpretation": "For M01 Pipe insulation (B01 mechanical room), the laboratory reported sample S01, layer Insulation, as detected, with chrysotile at 15%. Asbestos is present in the sampled pipe insulation of this zone, and its condition is recorded as poor.",
+        "reason": "Category A: asbestos was detected in S01 (Insulation) and the condition is poor, so the material is flagged for priority professional review before affected work.",
+        "uncertainty": "No missing information is recorded for this zone. The recorded quantity is an exercise input.",
+        "followUp": "Arrange priority professional review of M01 Pipe insulation (B01 mechanical room, S01) before any work that could affect it, including review of the visible damage."
+      },
+      {
+        "materialId": "M02",
+        "interpretation": "For M02 Floor tile and adhesive (G01 corridor), sample S02 has two separately reported layers. The Floor tile layer was not detected. The Black adhesive layer was detected, with chrysotile at 2%. The zone is therefore treated as detected, and the tile result does not replace the adhesive result.",
+        "reason": "Category A: asbestos was detected in S02 (Black adhesive) and disturbance is planned, so the material is flagged for priority professional review before affected work.",
+        "uncertainty": "No missing information is recorded for this zone.",
+        "followUp": "Arrange priority professional review of M02 Floor tile and adhesive (G01 corridor, S02) before the planned corridor floor work proceeds."
+      },
+      {
+        "materialId": "M03",
+        "interpretation": "For M03 Textured ceiling (G02 office), the laboratory reported sample S03, layer Textured coating, as detected with chrysotile at 1%. Sample S07, layer Textured coating, was also detected with chrysotile at 1%. S07 is a second representative sample of the same ceiling zone. Both results indicate asbestos in the textured coating, and the condition is damaged.",
+        "reason": "Category A: asbestos was detected in S03 and S07 (Textured coating), the condition is damaged and disturbance is planned, so the material is flagged for priority professional review before affected work.",
+        "uncertainty": "No missing information is recorded for this zone.",
+        "followUp": "Arrange priority professional review of M03 Textured ceiling (G02 office, S03 and S07) before the planned ceiling work proceeds."
+      },
+      {
+        "materialId": "M04",
+        "interpretation": "For M04 Wall plaster (G03 meeting room), the laboratory reported sample S04, layer Plaster, as not detected. The result applies only to the sampled plaster.",
+        "reason": "Category D: asbestos was not detected in S04 (Plaster), and the finding is limited to the sampled material.",
+        "uncertainty": "The not detected result applies only to the sampled material.",
+        "followUp": "Record the finding for M04 Wall plaster (G03 meeting room, S04) as limited to the sampled material. Do not extend it to the room or the building."
+      },
+      {
+        "materialId": "M05",
+        "interpretation": "For M05 Cement panel (E01 east elevation), the laboratory reported sample S05, layer Cement panel, as detected with chrysotile at 8%. The panel is intact and no disturbance is planned.",
+        "reason": "Category B: asbestos was detected in S05 (Cement panel), the condition is intact and no disturbance is planned, so the zone is flagged for professional management review with no removal conclusion.",
+        "uncertainty": "The quantity was not measured, so the zone is not priced.",
+        "followUp": "Refer M05 Cement panel (E01 east elevation, S05) for professional management review, and measure the quantity."
+      },
+      {
+        "materialId": "M06",
+        "interpretation": "For M06 Insulation fragment (B02 service room), the laboratory reported sample S06, layer Insulation fragment, as inconclusive because of insufficient usable material. No asbestos type or content was reported.",
+        "reason": "Category C: the lab result is inconclusive for S06 (Insulation fragment), so the asbestos status stays unresolved and unknown.",
+        "uncertainty": "Sample S06, layer Insulation fragment: the lab result is inconclusive.",
+        "followUp": "Resolve the evidence gap for M06 Insulation fragment (B02 service room, S06) through further professional assessment, such as a new sample. The status stays unresolved until then."
+      },
+      {
+        "materialId": "M07",
+        "interpretation": "For M07 Uninspected riser material (B03 locked riser), there are no samples and no laboratory results because the zone was inaccessible. Nothing can be concluded about asbestos presence.",
+        "reason": "Category C: the zone was inaccessible and no sample was taken, so the asbestos status stays unresolved and unknown.",
+        "uncertainty": "The zone was inaccessible and no sample was taken, so its asbestos status is unknown. The quantity was not measured.",
+        "followUp": "Obtain access to M07 Uninspected riser material (B03 locked riser), then arrange inspection and sampling by a professional. The status stays unresolved until then."
+      }
+    ],
+    "recommendations": [
+      {
+        "materialId": "M01",
+        "category": "A",
+        "text": "M01 Pipe insulation (B01 mechanical room, S01): priority professional review before any affected work, given the poor condition and detected chrysotile."
+      },
+      {
+        "materialId": "M02",
+        "category": "A",
+        "text": "M02 Floor tile and adhesive (G01 corridor, S02): priority professional review before the planned floor work, because the adhesive layer was detected."
+      },
+      {
+        "materialId": "M03",
+        "category": "A",
+        "text": "M03 Textured ceiling (G02 office, S03, S07): priority professional review before the planned ceiling work, given the damaged condition and detected chrysotile."
+      },
+      {
+        "materialId": "M04",
+        "category": "D",
+        "text": "M04 Wall plaster (G03 meeting room, S04): record the not detected finding as limited to the sampled material."
+      },
+      {
+        "materialId": "M05",
+        "category": "B",
+        "text": "M05 Cement panel (E01 east elevation, S05): professional management review, with the quantity to be measured. No removal conclusion is made."
+      },
+      {
+        "materialId": "M06",
+        "category": "C",
+        "text": "M06 Insulation fragment (B02 service room, S06): resolve the inconclusive result through further professional assessment. The status stays unresolved."
+      },
+      {
+        "materialId": "M07",
+        "category": "C",
+        "text": "M07 Uninspected riser material (B03 locked riser, no samples): obtain access, then inspect and sample. The status stays unresolved."
+      }
+    ],
+    "limitations": [
+      "Only accessible areas were assessed.",
+      "Hidden materials that are not listed as material zones, for example inside walls, above ceilings or below floors, were not inspected or sampled.",
+      "No air monitoring or clearance data exists."
+    ]
+  }
+}

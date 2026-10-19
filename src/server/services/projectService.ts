@@ -222,6 +222,8 @@ export function projectService(db: PrismaClient = getDb()) {
       await db.$transaction(async (tx) => {
         await findZoneOrThrow(tx, projectId, zoneId);
         await tx.materialZone.delete({ where: { id: zoneId } });
+        // The zone's report texts go with it (ReportNarrative.itemKey is the zone ID).
+        await tx.reportNarrative.deleteMany({ where: { projectId, itemKey: zoneId } });
         await touchProject(tx, projectId);
       });
     },

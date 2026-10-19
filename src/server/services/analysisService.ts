@@ -19,7 +19,7 @@ type Tx = Prisma.TransactionClient;
 export type ProjectAnalysisDto = ProjectAnalysis & { projectId: string };
 
 /** Reads zones, accepted lab rows, lab report states and decisions in one transaction and analyzes them. */
-async function loadAnalysis(tx: Tx, projectId: string): Promise<ProjectAnalysisDto> {
+export async function loadAnalysis(tx: Tx, projectId: string): Promise<ProjectAnalysisDto> {
   await findProjectOrThrow(tx, projectId);
   const zones = await findZones(tx, projectId);
   const rows = await findAcceptedRows(tx, projectId);

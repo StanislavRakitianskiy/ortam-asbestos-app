@@ -64,3 +64,17 @@ export class ConflictError extends Error {
     this.code = code;
   }
 }
+
+/**
+ * An AI step failed: no key, an API error, a refusal or an unusable answer. Becomes HTTP 502 with the readable message
+ * and the AI error code; the failed AiRun is kept for "View raw AI response".
+ */
+export class AiStepError extends Error {
+  readonly code: string;
+
+  constructor(message: string, code: string) {
+    super(message);
+    this.name = "AiStepError";
+    this.code = code;
+  }
+}

@@ -5,6 +5,8 @@ import type {
   ManualLabResultInput,
 } from "@/domain/labReviewInput";
 import type { IssueReopenInput, IssueResolutionInput } from "@/domain/issueResolution";
+import type { NarrativeEditInput, NarrativeResetInput } from "@/domain/narrative";
+import type { ReviewChecklistInput } from "@/domain/reviewChecklist";
 import type { ProjectCreateInput, ProjectUpdateInput, ZoneCreateInput, ZoneUpdateInput } from "@/domain/projectInput";
 import type { MaterialZone } from "@/domain/types";
 import type { ApiErrorBody } from "@/server/http";
@@ -12,7 +14,9 @@ import type { ProjectAnalysisDto } from "@/server/services/analysisService";
 import type { AiRunDetail, LabDocumentDto } from "@/server/services/labDocumentDto";
 import type { UploadOutcome } from "@/server/services/labDocumentService";
 import type { BulkAcceptOutcome } from "@/server/services/labReviewService";
+import type { NarrativeDraftResult } from "@/server/services/narrativeService";
 import type { ProjectDetail, ProjectDto, ProjectSummary } from "@/server/services/projectService";
+import type { ReportDraftDto } from "@/server/services/reportService";
 
 /** A failed API call with the server's readable message and, for HTTP 400, the invalid fields. */
 export class ApiError extends Error {
@@ -57,6 +61,7 @@ export const queryKeys = {
   labDocuments: (projectId: string) => ["project", projectId, "lab-documents"] as const,
   aiRun: (projectId: string, runId: string) => ["project", projectId, "ai-runs", runId] as const,
   analysis: (projectId: string) => ["project", projectId, "analysis"] as const,
+  report: (projectId: string) => ["project", projectId, "report"] as const,
 };
 
 const projectUrl = (projectId: string) => `/api/projects/${encodeURIComponent(projectId)}`;
@@ -116,6 +121,15 @@ export const api = {
     request<ProjectAnalysisDto>(`${projectUrl(projectId)}/issue-resolutions`, { method: "PUT", body: input }),
   reopenIssue: (projectId: string, input: IssueReopenInput) =>
     request<ProjectAnalysisDto>(`${projectUrl(projectId)}/issue-resolutions`, { method: "DELETE", body: input }),
+  getReport: (projectId: string) => request<ReportDraftDto>(`${projectUrl(projectId)}/report`),
+  draftNarrative: (projectId: string) =>
+    request<NarrativeDraftResult>(`${projectUrl(projectId)}/report/narrative/draft`, { method: "POST" }),
+  saveNarrative: (projectId: string, input: NarrativeEditInput) =>
+    request<ReportDraftDto>(`${projectUrl(projectId)}/report/narrative`, { method: "PUT", body: input }),
+  resetNarrative: (projectId: string, input: NarrativeResetInput) =>
+    request<ReportDraftDto>(`${projectUrl(projectId)}/report/narrative/reset`, { method: "POST", body: input }),
+  saveChecklist: (projectId: string, input: ReviewChecklistInput) =>
+    request<ReportDraftDto>(`${projectUrl(projectId)}/report/checklist`, { method: "PUT", body: input }),
 };
 
 /** First message per field, for showing next to inputs. */

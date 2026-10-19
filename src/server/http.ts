@@ -1,10 +1,10 @@
 import type { z } from "zod";
-import { ConflictError, NotFoundError, ValidationError } from "@/server/errors";
+import { AiStepError, ConflictError, NotFoundError, ValidationError } from "@/server/errors";
 
 /** JSON body of every non-2xx API response. */
 export type ApiErrorBody = {
   error: string;
-  /** Machine-readable reason for some 409 answers. */
+  /** Machine-readable reason for some 409 answers and the AI error code of a 502. */
   code?: string;
   fieldErrors?: Record<string, string[]>;
   formErrors?: string[];
@@ -40,6 +40,7 @@ export function errorResponse(error: unknown): Response {
   }
   if (error instanceof NotFoundError) return json({ error: error.message } satisfies ApiErrorBody, 404);
   if (error instanceof ConflictError) return json({ error: error.message, code: error.code } satisfies ApiErrorBody, 409);
+  if (error instanceof AiStepError) return json({ error: error.message, code: error.code } satisfies ApiErrorBody, 502);
   console.error(error);
   return json({ error: "Something went wrong on the server. Please try again." } satisfies ApiErrorBody, 500);
 }
