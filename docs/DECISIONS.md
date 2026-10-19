@@ -472,3 +472,28 @@ limit for the whole call, and checks the answer opens in pdf-lib. Connection ref
 — start it with docker compose up -d". The master's styles set Arial, which LibreOffice in Gotenberg
 replaces with the metrically compatible Liberation Sans, so the PDF lays out close to Word but not pixel-identical. `npm test` uses a fake converter; the real
 conversion test runs with `GOTENBERG_IT=1 npm test`.
+
+## D-043 · `npm run verify` runs the app's own modules (2026-10-19)
+
+- `scripts/verify-golden.ts` builds the ReportModel with `loadReportModel`, reads the revision files through
+  `revisionService().getFile` and the PDF text with `extractPages`, so it checks what the app computes and serves, not
+  a second implementation. Node's built-in TypeScript support does not resolve the `@/` alias or extensionless
+  relative imports; `scripts/ts-hooks.mjs` adds a `node:module` resolve hook for files of this repository only. No new
+  dependency (tsx or vite-node would need approval).
+- The golden values are read from the table and the "Zone subtotal …" line of CLAUDE.md, so there is one copy. A
+  section it cannot read stops the check with an error instead of passing.
+- Files: every "total before tax" amount in the Word body and in the PDF text must be the same and equal the revision
+  snapshot's total, which must equal the golden total; both files must print the revision number and the 12-character
+  snapshot of that revision. An outdated latest revision is reported as a note, not a failure: the data check already
+  covers the current state.
+
+## D-044 · Dialog focus and destructive confirmations (2026-10-19)
+
+- Most dialogs are opened from state without a `DialogTrigger`, so Radix returned focus to `<body>` when they closed
+  and a keyboard user lost their place. `DialogContent` now remembers the element focused when it opened and returns
+  focus to it, if it is still on the page.
+- Confirmations of a destructive action (delete project, delete zone, reopen or remove an issue decision, extract again
+  replacing reviewed rows) open with the footer's Close button focused (`focusCancel`), so pressing Enter twice does not
+  delete.
+- Reopening a decision and removing an auto-cleared one now ask first: both delete the employee's note, and cleared
+  decisions are also printed in the report's decision log.

@@ -199,7 +199,7 @@ function DeleteZoneDialog({
 
   return (
     <Dialog open={zone !== null} onOpenChange={(open) => (open ? undefined : onClose())}>
-      <DialogContent>
+      <DialogContent focusCancel>
         {zone ? (
           <>
             <DialogHeader>
@@ -208,9 +208,9 @@ function DeleteZoneDialog({
               </DialogTitle>
               <DialogDescription>
                 {zone.sampleIds.length > 0
-                  ? `Its sample IDs (${zone.sampleIds.join(", ")}) are removed from the register too. `
+                  ? `Its sample IDs (${zone.sampleIds.join(", ")}) are removed from the register too; lab results with these IDs then show as unmatched. `
                   : ""}
-                This cannot be undone.
+                Its narrative texts in the report draft are deleted with it. This cannot be undone.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter showCloseButton>

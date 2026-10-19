@@ -55,8 +55,27 @@ const DECISION_TEXT: Record<IssueDecision, { title: string; description: string;
 
 type DialogState = { issue: IssueView; decision: IssueDecision } | null;
 
+/** A decision about to be deleted: a current one (Reopen) or one whose issue has cleared (Remove). */
+type DeleteState = { issueKey: string; kind: "REOPEN" | "REMOVE_CLEARED"; note: string } | null;
+
+const DELETE_TEXT = {
+  REOPEN: {
+    title: "Reopen this issue?",
+    description: "Your decision and its note are deleted and the issue is open again. You can decide again afterwards; the note is not kept.",
+    action: "Reopen issue",
+    done: "Decision removed. The issue is open again.",
+  },
+  REMOVE_CLEARED: {
+    title: "Remove this cleared decision?",
+    description: "The decision and its note are deleted and no longer listed in the report's decision log. This cannot be undone.",
+    action: "Remove decision",
+    done: "Cleared decision removed.",
+  },
+} as const;
+
 export function NeedsAttention({ projectId, analysis, navigation }: { projectId: string; analysis: ProjectAnalysisDto; navigation: MatchingNavigation }) {
   const [dialog, setDialog] = useState<DialogState>(null);
+  const [deleting, setDeleting] = useState<DeleteState>(null);
   const reopen = useReopenIssue(projectId);
   const { issues, autoCleared } = analysis;
   const count = (state: IssueView["state"]) => issues.filter((found) => found.state === state).length;
@@ -64,8 +83,17 @@ export function NeedsAttention({ projectId, analysis, navigation }: { projectId:
     (group) => group.issues.length > 0,
   );
 
-  const onReopen = (issueKey: string, message: string) =>
-    reopen.mutate({ issueKey }, { onSuccess: () => toast.success(message), onError: (error) => toast.error(`Not saved. ${error.message}`) });
+  const onDelete = (target: NonNullable<DeleteState>) =>
+    reopen.mutate(
+      { issueKey: target.issueKey },
+      {
+        onSuccess: () => {
+          toast.success(DELETE_TEXT[target.kind].done);
+          setDeleting(null);
+        },
+        onError: (error) => toast.error(`Not saved. ${error.message}`),
+      },
+    );
 
   return (
     <Card aria-labelledby="needs-attention-heading">
@@ -98,7 +126,7 @@ export function NeedsAttention({ projectId, analysis, navigation }: { projectId:
                     navigation={navigation}
                     busy={reopen.isPending}
                     onDecide={(decision) => setDialog({ issue: found, decision })}
-                    onReopen={() => onReopen(found.key, "Decision removed. The issue is open again.")}
+                    onReopen={() => setDeleting({ issueKey: found.key, kind: "REOPEN", note: found.decision?.note ?? "" })}
                   />
                 ))}
               </ul>
@@ -129,10 +157,10 @@ export function NeedsAttention({ projectId, analysis, navigation }: { projectId:
                     size="xs"
                     className="w-fit"
                     disabled={reopen.isPending}
-                    onClick={() => onReopen(cleared.issueKey, "Cleared decision removed.")}
+                    onClick={() => setDeleting({ issueKey: cleared.issueKey, kind: "REMOVE_CLEARED", note: cleared.note })}
                   >
                     <Trash2Icon aria-hidden />
-                    Remove
+                    Remove…
                   </Button>
                 </li>
               ))}
@@ -142,6 +170,7 @@ export function NeedsAttention({ projectId, analysis, navigation }: { projectId:
       </CardContent>
 
       <DecisionDialog projectId={projectId} state={dialog} onClose={() => setDialog(null)} />
+      <DeleteDecisionDialog state={deleting} busy={reopen.isPending} onConfirm={onDelete} onClose={() => setDeleting(null)} />
     </Card>
   );
 }
@@ -240,12 +269,46 @@ function IssueItem({
           {issue.decision ? (
             <Button size="xs" variant="ghost" disabled={busy} onClick={onReopen}>
               <RotateCcwIcon aria-hidden />
-              Reopen
+              Reopen…
             </Button>
           ) : null}
         </div>
       ) : null}
     </li>
+  );
+}
+
+function DeleteDecisionDialog({
+  state,
+  busy,
+  onConfirm,
+  onClose,
+}: {
+  state: DeleteState;
+  busy: boolean;
+  onConfirm: (state: NonNullable<DeleteState>) => void;
+  onClose: () => void;
+}) {
+  const text = state === null ? null : DELETE_TEXT[state.kind];
+  return (
+    <Dialog open={state !== null} onOpenChange={(next) => (next ? undefined : onClose())}>
+      <DialogContent className="sm:max-w-lg" focusCancel>
+        {state !== null && text !== null ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>{text.title}</DialogTitle>
+              <DialogDescription>{text.description}</DialogDescription>
+            </DialogHeader>
+            <blockquote className="rounded-md border-l-2 border-muted-foreground/40 bg-muted/50 px-3 py-2 text-sm">“{state.note}”</blockquote>
+            <DialogFooter showCloseButton>
+              <Button variant="destructive" disabled={busy} onClick={() => onConfirm(state)}>
+                {busy ? "Removing…" : text.action}
+              </Button>
+            </DialogFooter>
+          </>
+        ) : null}
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -113,7 +113,10 @@ function Workspace({ projectId }: { projectId: string }) {
             <TabsTrigger key={item.value} value={item.value}>
               {item.label}
               {item.value === "project" && dirty ? (
-                <span className="size-1.5 rounded-full bg-amber-500" aria-label="(unsaved changes)" />
+                <span title="Unsaved changes">
+                  <span className="block size-1.5 rounded-full bg-amber-500" aria-hidden />
+                  <span className="sr-only">(unsaved changes)</span>
+                </span>
               ) : null}
               {item.value === "materials" ? (
                 <span className="text-xs text-muted-foreground tabular-nums">{zones.length}</span>
@@ -122,8 +125,9 @@ function Workspace({ projectId }: { projectId: string }) {
                 <span className="text-xs text-muted-foreground tabular-nums">{labDocuments.data.length}</span>
               ) : null}
               {item.value === "review" && pendingRowCount(labDocuments.data) > 0 ? (
-                <span className="text-xs text-amber-700 tabular-nums dark:text-amber-300" aria-label={`(${pendingRowCount(labDocuments.data)} rows pending)`}>
+                <span className="text-xs text-amber-700 tabular-nums dark:text-amber-300" title="Rows waiting for review">
                   {pendingRowCount(labDocuments.data)}
+                  <span className="sr-only"> rows pending</span>
                 </span>
               ) : null}
             </TabsTrigger>

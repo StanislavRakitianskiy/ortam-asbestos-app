@@ -61,6 +61,18 @@ function warningTarget(report: ReportDraftDto, warning: GuardWarning): { id: str
   };
 }
 
+function NoZones() {
+  return (
+    <p className="text-sm text-muted-foreground">
+      No material zones yet. Add them on the{" "}
+      <a href="?tab=materials" className="underline underline-offset-2" onClick={(event) => goToTab(event, "tab=materials")}>
+        Materials
+      </a>{" "}
+      tab.
+    </p>
+  );
+}
+
 export function DraftView({ projectId }: { projectId: string }) {
   const { data: report, error, isPending, refetch } = useReport(projectId);
   const draft = useDraftNarrative(projectId);
@@ -240,6 +252,7 @@ export function DraftView({ projectId }: { projectId: string }) {
         title="Findings and traceability"
         description="One record for every material zone. Every layer result and every sample ID is kept."
       >
+        {model.findings.length === 0 ? <NoZones /> : null}
         {model.findings.map((finding) => (
           <article key={finding.zoneId} id={findingId(finding.zoneId)} className="flex scroll-mt-20 flex-col gap-3 rounded-lg border p-3 sm:p-4">
             <header className="flex flex-wrap items-center justify-between gap-2">
@@ -265,6 +278,7 @@ export function DraftView({ projectId }: { projectId: string }) {
         title="Recommendations for professional review"
         description="Draft actions that follow from the lab result and the field observation. The cost scenario does not prescribe removal."
       >
+        {model.recommendations.length === 0 ? <NoZones /> : null}
         {model.recommendations.map((item) => (
           <div key={item.zoneId} className="flex flex-col gap-2 border-b pb-4 last:border-b-0 last:pb-0">
             <div className="flex flex-wrap items-center justify-between gap-2">

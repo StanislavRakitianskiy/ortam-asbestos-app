@@ -51,10 +51,18 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  focusCancel = false,
+  onOpenAutoFocus,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
+  /** Confirmations of a destructive action open with the footer's Close button focused, so Enter does not confirm. */
+  focusCancel?: boolean
 }) {
+  // Most dialogs here are opened from state, without a DialogTrigger, so Radix has no trigger to return focus to and
+  // keyboard focus would fall back to <body>. Remember what had focus when the dialog opened and return to it.
+  const returnFocusTo = React.useRef<HTMLElement | null>(null)
   return (
     <DialogPortal>
       <DialogOverlay />
@@ -64,6 +72,23 @@ function DialogContent({
           "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
+        onOpenAutoFocus={(event) => {
+          returnFocusTo.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+          onOpenAutoFocus?.(event)
+          const cancel = focusCancel && event.currentTarget instanceof HTMLElement ? event.currentTarget.querySelector<HTMLElement>("[data-slot=dialog-cancel]") : null
+          if (!event.defaultPrevented && cancel !== null) {
+            event.preventDefault()
+            cancel.focus()
+          }
+        }}
+        onCloseAutoFocus={(event) => {
+          onCloseAutoFocus?.(event)
+          const target = returnFocusTo.current
+          if (!event.defaultPrevented && target !== null && target !== document.body && target.isConnected) {
+            event.preventDefault()
+            target.focus()
+          }
+        }}
         {...props}
       >
         {children}
@@ -115,7 +140,9 @@ function DialogFooter({
       {children}
       {showCloseButton && (
         <DialogPrimitive.Close asChild>
-          <Button variant="outline">Close</Button>
+          <Button variant="outline" data-slot="dialog-cancel">
+            Close
+          </Button>
         </DialogPrimitive.Close>
       )}
     </div>

@@ -232,7 +232,7 @@ function DeleteProject({ project }: { project: ProjectDto }) {
     <Card>
       <CardHeader>
         <CardTitle>Delete project</CardTitle>
-        <CardDescription>Removes the project with all its material zones. This cannot be undone.</CardDescription>
+        <CardDescription>Removes the project with its zones, lab reports, review work and report revisions. This cannot be undone.</CardDescription>
       </CardHeader>
       <CardContent>
         <Button variant="destructive" onClick={() => setOpen(true)}>
@@ -240,11 +240,12 @@ function DeleteProject({ project }: { project: ProjectDto }) {
           Delete project
         </Button>
         <Dialog open={open} onOpenChange={setOpen}>
-          <DialogContent>
+          <DialogContent focusCancel>
             <DialogHeader>
               <DialogTitle>Delete project {project.code}?</DialogTitle>
               <DialogDescription>
-                The project, its material zones and sample IDs are removed permanently.
+                The project, its material zones and sample IDs, its uploaded lab reports with their extracted results and corrections, the
+                review decisions, the report narrative and every report revision are removed permanently. This cannot be undone.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter showCloseButton>

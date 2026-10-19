@@ -59,8 +59,9 @@ describe("build-template", () => {
     const template = new PizZip(buildTemplate(master));
     const names = Object.keys(masterZip.files).filter((name) => !masterZip.files[name].dir);
     expect(Object.keys(template.files).filter((name) => !template.files[name].dir).sort()).toEqual([...names].sort());
+    // Buffer.equals, not toEqual: a deep compare of every byte of the fonts and media took seconds under coverage.
     for (const name of names.filter((entry) => entry !== "word/document.xml")) {
-      expect(template.file(name)!.asUint8Array(), name).toEqual(masterZip.file(name)!.asUint8Array());
+      expect(Buffer.from(template.file(name)!.asUint8Array()).equals(Buffer.from(masterZip.file(name)!.asUint8Array())), name).toBe(true);
     }
   });
 

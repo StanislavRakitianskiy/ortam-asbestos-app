@@ -164,8 +164,8 @@ export function LabDocumentCard({
                 disabled={extract.isPending}
                 onClick={() => extract.mutate(false)}
               >
-                <RotateCcwIcon aria-hidden />
-                Retry
+                {extract.isPending ? <LoaderCircleIcon className="animate-spin" aria-hidden /> : <RotateCcwIcon aria-hidden />}
+                {extract.isPending ? "Retrying…" : "Retry"}
               </Button>
             ) : null}
           </div>
@@ -190,7 +190,7 @@ export function LabDocumentCard({
 
       <RawResponseDialog projectId={projectId} runId={rawRunId} onClose={() => setRawRunId(null)} />
       <Dialog open={confirmExtract} onOpenChange={setConfirmExtract}>
-        <DialogContent>
+        <DialogContent focusCancel>
           <DialogHeader>
             <DialogTitle>Extract {document.fileName} again?</DialogTitle>
             <DialogDescription>

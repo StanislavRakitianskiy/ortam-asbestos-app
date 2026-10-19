@@ -17,7 +17,7 @@
     "db:seed": "prisma db seed",
     "fixture:edge": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/make-edge-fixture.ts",
     "template:build": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/build-template.ts",
-    "verify": "node scripts/not-implemented.mjs verify",
+    "verify": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-hooks.mjs scripts/verify-golden.ts",
     "setup": "npm ci && prisma generate && prisma migrate deploy"
   },
   "dependencies": {
