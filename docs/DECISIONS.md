@@ -92,3 +92,37 @@ Layers of one sample are compared after trimming, collapsing whitespace and lowe
 "black  adhesive"). Different wording stays two separate layers; nothing is merged by similarity. The same sample and
 layer with different labels is a CONFLICT layer: it does not count as detected, and the zone is DETECTED only if
 another layer is detected without conflict.
+
+## D-012 · One `init` migration instead of the phase 0 one (2026-10-19)
+
+Phase 0 shipped a placeholder migration with only `Project(id, code)`; the only data was the seeded `DEMO` row. Phase 2
+replaces it with a single `init` migration for the full model (`docs/DATA_MODEL.md`), so a fresh clone applies one
+migration. A development database created in phase 0 must be recreated: `rm prisma/dev.db && npx prisma migrate dev`.
+A running `next dev` must also be restarted after `prisma generate`, because it keeps the old client in memory.
+
+## D-013 · Project dates are `YYYY-MM-DD` text (2026-10-19)
+
+Inspection and report dates are calendar days. A `DateTime` would store UTC midnight and could show the previous day in
+a time zone west of UTC. They are stored as text, validated with `z.iso.date()`, and compared as strings (ISO dates
+sort correctly). The report date may not be before the inspection date.
+
+## D-014 · Material zone input rules (2026-10-19)
+
+- One zod schema set (`src/domain/projectInput.ts`) is used by the forms and by the route handlers. Objects are strict:
+  an unknown key is a 400, not silently dropped.
+- Quantity must be sent explicitly on create: a number > 0 with at most two decimals, or `null` for Unknown. A missing
+  quantity is an error, never 0 or null by default.
+- Material IDs are trimmed and uppercased like sample IDs and are unique within a project.
+- Sample IDs are normalized (trim + uppercase) on input. One ID per entry: spaces, commas, `;` and `|` are rejected so
+  `S03|S07` cannot become one ID; the chips input splits them instead. The same ID twice in one zone is rejected. The
+  same ID in two zones is allowed and shown as a warning, because matching reports it as a blocking issue (D-010).
+- A rate reference must be on the rate card or `null`. A rate whose unit differs from the zone unit is accepted and
+  warned about ("… it will not be priced"); the cost code never applies it.
+- In the form, unit, condition and planned disturbance start unselected so nothing is silently defaulted.
+  Accessible starts at Yes.
+
+## D-015 · Service tests use a throwaway SQLite file (2026-10-19)
+
+`tests/helpers/testDb.ts` creates a database in the OS temp folder and applies the real migrations with
+`prisma migrate deploy` (about a second per test file). Each test file has its own file, so files can run in
+parallel, the tests exercise the same SQL as the app, and `prisma/dev.db` is never touched.

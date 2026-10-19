@@ -1,4 +1,5 @@
-// Phase 0: only the Project model. The full schema (zones, samples, lab results, revisions) arrives in phase 2.
+// Full data model. Status and JSON columns are plain String: SQLite has no enums, so their allowed values live in
+// src/server/dbEnums.ts and are checked with Zod at the service boundary. See docs/DATA_MODEL.md.
 
 generator client {
   provider = "prisma-client-js"
@@ -10,8 +11,236 @@ datasource db {
 }
 
 model Project {
+  id               String   @id @default(cuid())
+  code             String   @unique
+  client           String
+  building         String
+  address          String   @default("")
+  /// ISO calendar date "YYYY-MM-DD"; null until entered.
+  inspectionDate   String?
+  /// ISO calendar date "YYYY-MM-DD"; null until entered.
+  reportDate       String?
+  preparedBy       String   @default("")
+  /// null means the review is still pending.
+  reviewedBy       String?
+  scope            String   @default("")
+  plannedWork      String   @default("")
+  limitations      String   @default("")
+  jurisdictionNote String   @default("")
+  currency         String   @default("CAD")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  zones            MaterialZone[]
+  labDocuments     LabDocument[]
+  aiRuns           AiRun[]
+  corrections      Correction[]
+  issueResolutions ReviewIssueResolution[]
+  narratives       ReportNarrative[]
+  checklist        ReviewChecklist?
+  revisions        ReportRevision[]
+}
+
+model MaterialZone {
+  id                 String  @id @default(cuid())
+  projectId          String
+  materialId         String
+  description        String
+  floor              String
+  location           String
+  /// null means not measured. Never stored as 0.
+  quantity           Float?
+  /// m2 | linear_m
+  unit               String
+  /// intact | damaged | poor | unknown
+  condition          String
+  plannedDisturbance Boolean
+  /// Rate card reference such as R_PIPE; null means not assigned.
+  rateRef            String?
+  accessible         Boolean @default(true)
+  notes              String  @default("")
+  sortOrder          Int
+
+  project Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  samples ZoneSample[]
+
+  @@unique([projectId, materialId])
+  @@index([projectId, sortOrder])
+}
+
+model ZoneSample {
+  id        String @id @default(cuid())
+  zoneId    String
+  /// Normalized: trimmed and uppercased.
+  sampleId  String
+  /// Register order as entered by the employee.
+  sortOrder Int
+
+  zone MaterialZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  @@unique([zoneId, sampleId])
+}
+
+model LabDocument {
+  id            String   @id @default(cuid())
+  projectId     String
+  fileName      String
+  sha256        String
+  storagePath   String
+  pageCount     Int
+  /// JSON array of page texts, index 0 = page 1.
+  pagesTextJson String
+  labReportId   String?
+  /// UPLOADED | EXTRACTING | EXTRACTED | FAILED
+  status        String
+  error         String?
+  createdAt     DateTime @default(now())
+
+  project Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  aiRuns  AiRun[]
+  results LabResult[]
+
+  @@unique([projectId, sha256])
+}
+
+model AiRun {
+  id            String   @id @default(cuid())
+  projectId     String
+  labDocumentId String?
+  /// EXTRACTION | NARRATIVE
+  kind          String
+  model         String
+  responseId    String?
+  inputTokens   Int?
+  outputTokens  Int?
+  durationMs    Int
+  /// RUNNING | SUCCEEDED | FAILED
+  status        String
+  error         String?
+  promptVersion String
+  rawResponse   String?
+  createdAt     DateTime @default(now())
+
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  labDocument LabDocument? @relation(fields: [labDocumentId], references: [id], onDelete: SetNull)
+  results     LabResult[]
+
+  @@index([projectId, createdAt])
+}
+
+model LabResult {
+  id               String   @id @default(cuid())
+  labDocumentId    String
+  aiRunId          String?
+  /// AI | MANUAL
+  origin           String
+  /// The row exactly as the AI returned it (JSON). Written once, never updated. null for MANUAL rows.
+  aiJson           String?
+  sampleId         String
+  layer            String
+  /// DETECTED | NOT_DETECTED | INCONCLUSIVE
+  resultLabel      String
+  asbestosType     String?
+  percentage       Float?
+  percentageRaw    String?
+  sourcePage       Int
+  sourceText       String
+  labNote          String?
+  /// HIGH | MEDIUM | LOW as reported by the AI; null for MANUAL rows.
+  confidence       String?
+  evidenceVerified Boolean  @default(false)
+  /// PENDING | ACCEPTED | REJECTED
+  reviewStatus     String   @default("PENDING")
+  rejectReason     String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  labDocument LabDocument @relation(fields: [labDocumentId], references: [id], onDelete: Cascade)
+  aiRun       AiRun?      @relation(fields: [aiRunId], references: [id], onDelete: SetNull)
+
+  @@index([labDocumentId])
+}
+
+model Correction {
   id        String   @id @default(cuid())
-  code      String   @unique
+  projectId String
+  /// Model name of the corrected row, e.g. LabResult.
+  entity    String
+  entityId  String
+  field     String
+  /// JSON-encoded previous and new value; null when absent.
+  oldValue  String?
+  newValue  String?
+  reason    String
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, entity, entityId])
+}
+
+model ReviewIssueResolution {
+  id        String   @id @default(cuid())
+  projectId String
+  /// Stable issue key from src/domain/matching.ts, e.g. UNMATCHED_LAB_SAMPLE:S08.
+  issueKey  String
+  /// RESOLVED | FLAGGED
+  decision  String
+  note      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, issueKey])
+}
+
+model ReportNarrative {
+  id        String   @id @default(cuid())
+  projectId String
+  section   String
+  /// Item within the section, e.g. a zone ID. "" for section-level text (SQLite unique indexes treat NULLs as distinct).
+  itemKey   String   @default("")
+  /// The AI draft exactly as generated; null when the employee wrote the text from scratch.
+  aiText    String?
+  text      String
+  /// AI_DRAFT | EDITED
+  source    String
+  updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, section, itemKey])
+}
+
+model ReviewChecklist {
+  projectId         String    @id
+  samplesChecked    Boolean   @default(false)
+  layersChecked     Boolean   @default(false)
+  quantitiesChecked Boolean   @default(false)
+  costsChecked      Boolean   @default(false)
+  narrativeChecked  Boolean   @default(false)
+  reviewerName      String?
+  reviewedAt        DateTime?
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model ReportRevision {
+  id           String   @id @default(cuid())
+  projectId    String
+  number       Int
+  /// Canonical JSON of everything the report shows; the DOCX and PDF are rendered from it.
+  snapshotJson String
+  snapshotHash String
+  /// GENERATING | READY | FAILED
+  status       String
+  error        String?
+  docxPath     String?
+  pdfPath      String?
+  createdAt    DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, number])
 }

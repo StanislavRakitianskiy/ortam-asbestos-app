@@ -1,0 +1,184 @@
+# Data model
+
+SQLite through Prisma 6 (`prisma/schema.prisma`, one migration `init`). SQLite has no enums, so every status column is
+a plain `String` and every JSON column is `String`. Their allowed values live in code and are checked with Zod at the
+service boundary:
+
+- zone `unit` and `condition`: `unitSchema`, `conditionSchema` in `src/domain/types.ts`
+- all other status columns: `src/server/dbEnums.ts`
+- form and API input: `src/domain/projectInput.ts`
+
+Every table except `Project` belongs to one project and is deleted with it (`onDelete: Cascade`).
+IDs are `cuid()` strings. "Optional" (`?`) columns are `NULL` when absent.
+
+## Project
+
+| Column | Type | Notes |
+|---|---|---|
+| id | String | |
+| code | String, unique | e.g. `ORTAM-DEMO-001` |
+| client, building | String | required on create |
+| address | String | default `""` |
+| inspectionDate, reportDate | String? | calendar date `YYYY-MM-DD`; text, so no time zone can shift the day. Report date must not be before the inspection date. |
+| preparedBy | String | default `""` |
+| reviewedBy | String? | `NULL` = review pending |
+| scope, plannedWork, limitations, jurisdictionNote | String | default `""` |
+| currency | String | always `CAD` |
+| createdAt, updatedAt | DateTime | `updatedAt` also moves on every zone add, edit or delete |
+
+## MaterialZone
+
+| Column | Type | Notes |
+|---|---|---|
+| id, projectId | String | |
+| materialId | String | uppercased, unique per project (`@@unique([projectId, materialId])`) |
+| description, floor, location | String | required |
+| quantity | Float? | `NULL` = unknown, never stored as 0; > 0 with at most 2 decimals |
+| unit | String | `m2` \| `linear_m` |
+| condition | String | `intact` \| `damaged` \| `poor` \| `unknown` |
+| plannedDisturbance | Boolean | |
+| rateRef | String? | key of the rate card (`R_PIPE`, `R_FLOOR`, `R_CEILING`, `R_PANEL`); `NULL` = not assigned. A unit mismatch is allowed and reported for review, never priced. |
+| accessible | Boolean | default `true` |
+| notes | String | default `""` |
+| sortOrder | Int | register order |
+
+Quantity lives only here. Several samples in one zone never multiply it.
+
+## ZoneSample
+
+| Column | Type | Notes |
+|---|---|---|
+| id, zoneId | String | |
+| sampleId | String | normalized: trim + uppercase. Unique per zone (`@@unique([zoneId, sampleId])`). |
+| sortOrder | Int | order the employee entered (S03 before S07) |
+
+The same sample ID may appear in two zones of a project; matching reports that as a blocking review issue instead of
+the database refusing it, so the employee can see and fix it.
+
+## LabDocument
+
+| Column | Type | Notes |
+|---|---|---|
+| id, projectId | String | |
+| fileName | String | original upload name |
+| sha256 | String | `@@unique([projectId, sha256])`: re-uploading the same PDF reuses the row |
+| storagePath | String | immutable file under `storage/uploads/` |
+| pageCount | Int | |
+| pagesTextJson | String | JSON `string[]`, index 0 = page 1 |
+| labReportId | String? | e.g. `LAB-A`, from extraction |
+| status | String | `UPLOADED` \| `EXTRACTING` \| `EXTRACTED` \| `FAILED` |
+| error | String? | readable failure reason |
+| createdAt | DateTime | |
+
+## AiRun
+
+One row per model call, successful or not.
+
+| Column | Type | Notes |
+|---|---|---|
+| id, projectId | String | |
+| labDocumentId | String? | set for extraction runs; `SET NULL` if the document goes |
+| kind | String | `EXTRACTION` \| `NARRATIVE` |
+| model | String | from `ANTHROPIC_MODEL` |
+| responseId | String? | API message ID |
+| inputTokens, outputTokens | Int? | |
+| durationMs | Int | |
+| status | String | `RUNNING` \| `SUCCEEDED` \| `FAILED` |
+| error | String? | |
+| promptVersion | String | versioned prompt file name |
+| rawResponse | String? | model output as received |
+| createdAt | DateTime | |
+
+## LabResult
+
+One sample layer from a lab report. AI values and employee corrections are kept apart.
+
+| Column | Type | Notes |
+|---|---|---|
+| id, labDocumentId | String | |
+| aiRunId | String? | run that produced it |
+| origin | String | `AI` \| `MANUAL` |
+| aiJson | String? | the row exactly as the AI returned it; written once, never updated. `NULL` for `MANUAL`. |
+| sampleId | String | as printed; normalized only when matching |
+| layer | String | |
+| resultLabel | String | `DETECTED` \| `NOT_DETECTED` \| `INCONCLUSIVE` |
+| asbestosType | String? | |
+| percentage | Float? | 0–100 |
+| percentageRaw | String? | as printed, e.g. `15%`, `Not reported` |
+| sourcePage | Int | 1-based page in the PDF |
+| sourceText | String | quoted supporting text |
+| labNote | String? | |
+| confidence | String? | `HIGH` \| `MEDIUM` \| `LOW` from the AI; `NULL` for `MANUAL` |
+| evidenceVerified | Boolean | quote found on the cited page |
+| reviewStatus | String | `PENDING` \| `ACCEPTED` \| `REJECTED` |
+| rejectReason | String? | |
+| createdAt, updatedAt | DateTime | |
+
+The current columns are the employee-reviewed values; `aiJson` is the untouched original. Every change to a current
+value writes a `Correction`.
+
+## Correction
+
+Audit log of employee edits.
+
+| Column | Type | Notes |
+|---|---|---|
+| id, projectId | String | |
+| entity, entityId | String | e.g. `LabResult`, its id |
+| field | String | |
+| oldValue, newValue | String? | JSON-encoded |
+| reason | String | required |
+| createdAt | DateTime | |
+
+## ReviewIssueResolution
+
+| Column | Type | Notes |
+|---|---|---|
+| id, projectId | String | |
+| issueKey | String | stable key from `src/domain/matching.ts`, e.g. `UNMATCHED_LAB_SAMPLE:S08`; `@@unique([projectId, issueKey])` |
+| decision | String | `RESOLVED` \| `FLAGGED` |
+| note | String | |
+| createdAt, updatedAt | DateTime | |
+
+## ReportNarrative
+
+| Column | Type | Notes |
+|---|---|---|
+| id, projectId | String | |
+| section | String | report section key |
+| itemKey | String | e.g. a zone ID; `""` for section-level text. Not nullable because SQLite treats NULLs as distinct in a unique index. `@@unique([projectId, section, itemKey])` |
+| aiText | String? | the AI draft as generated |
+| text | String | current text |
+| source | String | `AI_DRAFT` \| `EDITED` |
+| updatedAt | DateTime | |
+
+## ReviewChecklist
+
+One row per project (`projectId` is the primary key).
+
+| Column | Type |
+|---|---|
+| samplesChecked, layersChecked, quantitiesChecked, costsChecked, narrativeChecked | Boolean, default `false` |
+| reviewerName | String? |
+| reviewedAt | DateTime? |
+
+## ReportRevision
+
+| Column | Type | Notes |
+|---|---|---|
+| id, projectId | String | |
+| number | Int | `@@unique([projectId, number])` |
+| snapshotJson | String | canonical JSON of everything the report shows |
+| snapshotHash | String | SHA-256 of `snapshotJson`; preview, DOCX and PDF must share it |
+| status | String | `GENERATING` \| `READY` \| `FAILED` |
+| error | String? | |
+| docxPath, pdfPath | String? | files under `storage/reports/` |
+| createdAt | DateTime | |
+
+## Deviations from the phase 2 brief
+
+- `ZoneSample.sortOrder` added so S03|S07 keeps the order the employee typed.
+- `LabResult.aiJson` and `LabResult.confidence` are nullable because `MANUAL` rows have no AI original.
+- `LabResult.createdAt` added for stable ordering.
+- `ReportNarrative.itemKey` is `String @default("")` instead of `String?` so the unique index works in SQLite.
+- `MaterialZone` has `@@unique([projectId, materialId])`.

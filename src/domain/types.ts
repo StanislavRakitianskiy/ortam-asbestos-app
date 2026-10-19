@@ -41,6 +41,15 @@ const hasAtMostDecimals = (value: number, decimals: number) => {
   return Math.abs(scaled - Math.round(scaled)) < 1e-6;
 };
 
+/** A measured quantity, or null when it was not measured. Never replace null with 0. */
+export const quantitySchema = z
+  .number({ error: "must be a number, or null when the quantity is unknown" })
+  .positive({ error: "must be greater than 0; mark it Unknown if it was not measured" })
+  .refine((value) => hasAtMostDecimals(value, QUANTITY_MAX_DECIMALS), {
+    error: `must have at most ${QUANTITY_MAX_DECIMALS} decimals`,
+  })
+  .nullable();
+
 export const materialZoneSchema = z.object({
   id: nonBlank,
   materialId: nonBlank,
@@ -48,14 +57,7 @@ export const materialZoneSchema = z.object({
   floor: z.string(),
   location: z.string(),
   sampleIds: z.array(nonBlank),
-  /** null means not measured. Never replace it with 0. */
-  quantity: z
-    .number()
-    .positive()
-    .refine((value) => hasAtMostDecimals(value, QUANTITY_MAX_DECIMALS), {
-      error: `must have at most ${QUANTITY_MAX_DECIMALS} decimals`,
-    })
-    .nullable(),
+  quantity: quantitySchema,
   unit: unitSchema,
   condition: conditionSchema,
   plannedDisturbance: z.boolean(),
