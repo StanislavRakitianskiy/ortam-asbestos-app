@@ -215,10 +215,10 @@ Nothing in the core checklist or the case details is partial or missing. Outside
 | Item | Status | Detail |
 |---|---|---|
 | Floor plan mapping bonus (brief page 8) | missing | Optional; not started. The report states that no floor plan is attached. |
-| Submission: setup instructions with prerequisites | missing | There is no README yet. |
-| Submission: handover note (time, AI tools, own checks, unfinished work, limitations) | missing | Not written yet. |
+| Submission: setup instructions with prerequisites | done | `README.md`: prerequisites, setup from a clone, demo walk-through, tests, architecture, troubleshooting. Followed on a fresh clone in phase 9 (`docs/SUBMISSION.md`). |
+| Submission: handover note (time, AI tools, own checks, unfinished work, limitations) | partial | `HANDOVER.md` is written; "Actual time spent" and "What I checked myself" are still TODO for the candidate. |
 | Submission: demo recording or screenshots | missing | Not made yet. |
-| Submission: one generated Word report and its matching PDF | partial | Revision 1 exists in `storage/reports/` (gitignored) and passes `npm run verify`; it is not yet copied out for submission or opened in Microsoft Word. |
+| Submission: one generated Word report and its matching PDF | done | `submission/ORTAM-DEMO-001_rev1.docx` and `.pdf`, byte-identical to revision 1, pass `npm run verify`; see `docs/SUBMISSION.md`. Not yet opened in Microsoft Word. |
 | Jurisdiction note | observation | Entered and stored, but not printed in the report; the report prints the fixed "does not claim legal compliance …" disclaimer instead. |
 | "Anthropic key: Configured" on the home page | observation | A format check only (D-007): an invalid key shows as configured until the first AI call fails with the 401 message. |
 | Deleting a project | observation | Database rows go (cascade); its revision files stay in `storage/reports/<projectId>/`. Uploaded PDFs are shared by SHA-256 and stay by design. |

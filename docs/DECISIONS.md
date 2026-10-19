@@ -497,3 +497,11 @@ conversion test runs with `GOTENBERG_IT=1 npm test`.
   delete.
 - Reopening a decision and removing an auto-cleared one now ask first: both delete the employee's note, and cleared
   decisions are also printed in the report's decision log.
+
+## D-045 · The dev server port is fixed to 3000 (2026-10-19)
+
+`npm run dev` is `next dev --port 3000`. Without `--port`, `next dev` moves to the next port when 3000 is taken, which
+is 3001. Gotenberg holds only `127.0.0.1:3001` (D-006), so Next.js can still listen on `[::]:3001`, and `localhost`
+resolves to `::1` first: the app's own `GOTENBERG_URL=http://localhost:3001` then reaches Next.js instead of Gotenberg
+and PDF generation fails. Found in the phase 9 clean-clone check, where port 3000 was in use. With an explicit port a
+busy 3000 stops the server with `EADDRINUSE`; another port is chosen with `npm run dev -- --port 3005`.
