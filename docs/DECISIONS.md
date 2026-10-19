@@ -126,3 +126,80 @@ sort correctly). The report date may not be before the inspection date.
 `tests/helpers/testDb.ts` creates a database in the OS temp folder and applies the real migrations with
 `prisma migrate deploy` (about a second per test file). Each test file has its own file, so files can run in
 parallel, the tests exercise the same SQL as the app, and `prisma/dev.db` is never touched.
+
+## D-016 · Structured output via `messages.create` and `z.toJSONSchema`, not `messages.parse` (2026-10-19)
+
+The extraction asks for JSON with `output_config.format = { type: "json_schema", schema }` and parses the answer itself
+with zod (`parseExtraction`, check a). Two findings in SDK 0.135 ruled out the `messages.parse` + `zodOutputFormat`
+helper:
+
+- `parse` throws an `AnthropicError` when the answer fails zod validation, and the thrown error does not carry the
+  message. The raw answer, response ID and token counts of that call would be lost, so the AiRun could not record
+  them and the retry could not tell the model what was wrong.
+- `zodOutputFormat` runs the schema through a transform that moves `enum` into the description. The result label would
+  then be a free string instead of being constrained to `DETECTED | NOT_DETECTED | INCONCLUSIVE`.
+
+`labExtractionJsonSchema()` uses `z.toJSONSchema` (enums kept, every property required, `additionalProperties: false`)
+and drops only the safe-integer bounds zod adds to `z.int()`; a test checks that only supported keywords remain.
+
+## D-017 · Server-side refusal fallback (2026-10-19)
+
+Requests go through `client.beta.messages.create` with `betas: ["server-side-fallback-2026-07-01"]` and
+`fallbacks: "default"`: if the requested model declines for policy reasons, the API re-runs the request on its default
+fallback model inside the same call. The answer is read from the text after the last `fallback` block, and
+`AiRun.model` stores `response.model`, i.e. the model that actually answered. A refusal of the whole chain is
+`FAILED` (`REFUSED`) with Retry; it is never retried automatically.
+
+## D-018 · Extraction call settings (2026-10-19)
+
+- Model from `ANTHROPIC_MODEL` (default `claude-sonnet-5-5`), `effort: "medium"`, thinking left at the model default
+  (adaptive; Sonnet 5.5 rejects `disabled`), no temperature (rejected by the model), `max_tokens` 16000, non-streaming.
+- Client timeout 90 s; the SDK itself retries 408/409/429/5xx and connection errors twice. Those retries belong to one
+  AiRun.
+- An unusable answer (not JSON, wrong shape, cut off at `max_tokens`) gets one automatic retry as a fresh request with
+  the problems appended to the prompt. The earlier answer is not replayed as conversation history, so no thinking blocks
+  have to be echoed back. Each attempt is its own AiRun.
+- Prompt settings live in the versioned prompt file. `labExtraction.v1` often returned `labReportId: null` although the
+  report title prints it (LAB-B, LAB-C), so `labExtraction.v2` says where the ID usually is. v1 stays in the repository
+  because stored AiRuns reference it. A missing report ID is also a deterministic warning (`LAB_REPORT_ID_MISSING`).
+
+## D-019 · Extraction runs after the upload response (2026-10-19)
+
+The upload route stores the file, reads its text and answers at once; the AI call runs in `after()` from
+`next/server`. The Lab reports tab polls every 2 s while a document is `UPLOADED` or `EXTRACTING`. Moving to
+`EXTRACTING` is a conditional update, so two clicks cannot start two extractions. A document still `EXTRACTING` after
+10 minutes (longer than the 90 s timeout with SDK retries and our one retry) was cut off by a server restart: the next
+read marks it `FAILED` (`INTERRUPTED`) with Retry and closes its `RUNNING` AiRun.
+
+## D-020 · Content-addressed, read-only uploads (2026-10-19)
+
+A PDF is stored as `storage/uploads/<sha256>.pdf` (`LabDocument.storagePath` is relative to `STORAGE_DIR`). It is
+written under a temporary name, made read-only (`0444`) and hard-linked into place, which fails instead of
+overwriting. Same hash means same bytes, so an existing file is left as is and two projects uploading the same PDF share
+it; deleting a project therefore never deletes upload files. De-duplication is per project
+(`@@unique([projectId, sha256])`): a re-upload returns the existing document with `duplicate` and never calls the AI or
+creates results. Files are accepted only with type `application/pdf`, content starting with `%PDF-`, and at most 10 MB.
+A PDF without a text layer is stored as `FAILED` / `NO_TEXT` without Retry (OCR is out of scope).
+
+## D-021 · Verification flags instead of silent fixes (2026-10-19)
+
+`verifyExtraction` never changes a label, applies a threshold or drops a row. Failed checks become flags on the row
+(`LabResult.verificationJson`) or warnings on the document (`LabDocument.warningsJson`) for the review step:
+
+- The quote must match exactly one line of the cited page after normalizing whitespace, Unicode compatibility forms and
+  typographic quotes/dashes. A quote matching several lines is `EVIDENCE_AMBIGUOUS`, not verified.
+- On the cited line the sample ID (as a whole token), the layer, the printed result, the type and the content must
+  appear; "Not detected" next to a `DETECTED` label is `LABEL_CONTRADICTS_LINE`.
+- Check (h): every line that looks like a result row (three or more cells separated by two or more spaces, one cell
+  exactly "Detected", "Not detected" or "Inconclusive") must be cited by some result. This catches merged or skipped
+  layers and relies on `extractPages` rendering column gaps as two spaces.
+- Any flag lowers the stored confidence to `LOW`; the model's own value stays in `aiJson`. A percentage outside 0–100
+  is stored as `null` with a flag; the original stays in `aiJson`.
+
+## D-022 · Re-extraction replaces drafts, not reviewed rows (2026-10-19)
+
+Retry and "Extract again" delete the document's earlier `AI` rows and insert the new ones in one transaction, so rows
+are replaced, never added. Rows the employee accepted or corrected (a `Correction` exists) are kept unless the request
+says `replaceReviewed: true`; without it the API answers 409 `REVIEWED_RESULTS` and the UI asks for confirmation.
+`MANUAL` rows are never touched. While a document is `EXTRACTING` or `FAILED`, its results are not returned at all, so a
+failed step never shows stale rows as current.

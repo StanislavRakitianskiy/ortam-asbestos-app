@@ -82,19 +82,34 @@ model ZoneSample {
 }
 
 model LabDocument {
-  id            String   @id @default(cuid())
-  projectId     String
-  fileName      String
-  sha256        String
-  storagePath   String
-  pageCount     Int
-  /// JSON array of page texts, index 0 = page 1.
-  pagesTextJson String
-  labReportId   String?
-  /// UPLOADED | EXTRACTING | EXTRACTED | FAILED
-  status        String
-  error         String?
-  createdAt     DateTime @default(now())
+  id                  String    @id @default(cuid())
+  projectId           String
+  fileName            String
+  sha256              String
+  /// Content-addressed and immutable: storage/uploads/<sha256>.pdf, shared by projects that upload the same file.
+  storagePath         String
+  sizeBytes           Int
+  pageCount           Int
+  /// JSON [{ page, lines: string[] }], page is 1-based.
+  pagesTextJson       String
+  /// Report header values as printed, from the latest successful extraction.
+  labReportId         String?
+  labName             String?
+  projectRef          String?
+  issuedDate          String?
+  /// JSON [{ page, text, relatedSampleIds, verified }] from the latest successful extraction.
+  documentNotesJson   String    @default("[]")
+  /// JSON [{ code, message }] document-level verification warnings.
+  warningsJson        String    @default("[]")
+  /// UPLOADED | EXTRACTING | NEEDS_REVIEW | ACCEPTED | FAILED
+  status              String
+  /// Readable failure reason; null unless FAILED.
+  error               String?
+  /// Machine-readable failure kind (see src/server/ai/aiErrors.ts); decides whether Retry is offered.
+  errorCode           String?
+  extractionStartedAt DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   project Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
   aiRuns  AiRun[]
@@ -117,6 +132,8 @@ model AiRun {
   /// RUNNING | SUCCEEDED | FAILED
   status        String
   error         String?
+  /// API stop_reason, e.g. end_turn, max_tokens, refusal.
+  stopReason    String?
   promptVersion String
   rawResponse   String?
   createdAt     DateTime @default(now())
@@ -149,6 +166,8 @@ model LabResult {
   /// HIGH | MEDIUM | LOW as reported by the AI; null for MANUAL rows.
   confidence       String?
   evidenceVerified Boolean  @default(false)
+  /// JSON [{ code, message }] from src/server/ai/verifyExtraction.ts. "[]" when every check passed.
+  verificationJson String   @default("[]")
   /// PENDING | ACCEPTED | REJECTED
   reviewStatus     String   @default("PENDING")
   rejectReason     String?

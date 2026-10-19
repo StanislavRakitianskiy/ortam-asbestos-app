@@ -1,0 +1,40 @@
+{
+  "_note": "Recorded real model output for fixtures/LAB-C_fictional_lab_report.pdf. Test fixture only: never used by application code. Do not edit; derive tampered copies instead.",
+  "model": "claude-sonnet-5-5",
+  "promptVersion": "labExtraction.v2",
+  "responseId": "msg_011CgBKxtvBJMnXugG5uMCH3",
+  "stopReason": "end_turn",
+  "recordedAt": "2026-10-19T09:04:30Z",
+  "output": {
+    "report": {
+      "labReportId": "LAB-C",
+      "labName": "Demo Materials Lab",
+      "projectRef": "ORTAM-DEMO-001",
+      "issuedDate": "October 5 2026"
+    },
+    "results": [
+      {
+        "sampleId": "S07",
+        "layer": "Textured coating",
+        "resultLabel": "DETECTED",
+        "asbestosType": "Chrysotile",
+        "percentage": 1,
+        "percentageRaw": "1%",
+        "sourcePage": 1,
+        "sourceText": "S07  Textured coating  Detected  Chrysotile  1%",
+        "labNote": "S07 is a second representative sample of the M03 ceiling zone also sampled as S03. This does not create an additional quantity.",
+        "confidence": "high"
+      }
+    ],
+    "documentNotes": [
+      {
+        "page": 1,
+        "text": "S07 is a second representative sample of the M03 ceiling zone also sampled as S03. This does not create an additional quantity.",
+        "relatedSampleIds": [
+          "S07",
+          "S03"
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "_note": "Recorded real model output for fixtures/LAB-B_fictional_lab_report.pdf. Test fixture only: never used by application code. Do not edit; derive tampered copies instead.",
+  "model": "claude-sonnet-5-5",
+  "promptVersion": "labExtraction.v2",
+  "responseId": "msg_011CgBKxtrhKWKjnkjo6DdLH",
+  "stopReason": "end_turn",
+  "recordedAt": "2026-10-19T09:04:30Z",
+  "output": {
+    "report": {
+      "labReportId": "LAB-B",
+      "labName": "Demo Materials Lab",
+      "projectRef": "ORTAM-DEMO-001",
+      "issuedDate": "October 5 2026"
+    },
+    "results": [
+      {
+        "sampleId": "S04",
+        "layer": "Plaster",
+        "resultLabel": "NOT_DETECTED",
+        "asbestosType": null,
+        "percentage": null,
+        "percentageRaw": "Not reported",
+        "sourcePage": 1,
+        "sourceText": "S04  Plaster  Not detected  Not reported  Not reported",
+        "labNote": null,
+        "confidence": "high"
+      },
+      {
+        "sampleId": "S05",
+        "layer": "Cement panel",
+        "resultLabel": "DETECTED",
+        "asbestosType": "Chrysotile",
+        "percentage": 8,
+        "percentageRaw": "8%",
+        "sourcePage": 1,
+        "sourceText": "S05  Cement panel  Detected  Chrysotile  8%",
+        "labNote": "S05 quantity is not supplied by the lab.",
+        "confidence": "medium"
+      },
+      {
+        "sampleId": "S06",
+        "layer": "Insulation fragment",
+        "resultLabel": "INCONCLUSIVE",
+        "asbestosType": null,
+        "percentage": null,
+        "percentageRaw": "Not reported",
+        "sourcePage": 1,
+        "sourceText": "S06  Insulation fragment  Inconclusive  Not reported  Not reported",
+        "labNote": "S06: insufficient usable material. Result is inconclusive; further professional assessment is required.",
+        "confidence": "high"
+      }
+    ],
+    "documentNotes": [
+      {
+        "page": 1,
+        "text": "S06: insufficient usable material. Result is inconclusive; further professional assessment is required. S05 quantity is not supplied by the lab.",
+        "relatedSampleIds": [
+          "S06",
+          "S05"
+        ]
+      }
+    ]
+  }
+}

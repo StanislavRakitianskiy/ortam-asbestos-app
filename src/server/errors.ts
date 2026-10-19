@@ -45,3 +45,15 @@ export class NotFoundError extends Error {
     this.name = "NotFoundError";
   }
 }
+
+/** The request conflicts with the current state, e.g. an extraction is already running. Becomes HTTP 409. */
+export class ConflictError extends Error {
+  /** Lets the UI react to a specific conflict, e.g. ask for confirmation. */
+  readonly code: string | undefined;
+
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = "ConflictError";
+    this.code = code;
+  }
+}

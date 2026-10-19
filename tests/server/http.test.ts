@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { zoneCreateSchema } from "@/domain/projectInput";
-import { NotFoundError, ValidationError } from "@/server/errors";
+import { ConflictError, NotFoundError, ValidationError } from "@/server/errors";
 import { errorResponse, handle, parseBody, type ApiErrorBody } from "@/server/http";
 
 const post = (body: string) => new Request("http://localhost/api/test", { method: "POST", body });
@@ -31,6 +31,12 @@ describe("API error responses", () => {
     const crash = errorResponse(new Error("SQLITE_BUSY: database is locked at /secret/path"));
     expect(crash.status).toBe(500);
     expect(JSON.stringify(await crash.json())).not.toContain("/secret/path");
+  });
+
+  it("answers 409 with the conflict code so the UI can ask for confirmation", async () => {
+    const response = errorResponse(new ConflictError("Confirm first.", "REVIEWED_RESULTS"));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "Confirm first.", code: "REVIEWED_RESULTS" });
   });
 
   it("names the fields in the message of a ValidationError", () => {

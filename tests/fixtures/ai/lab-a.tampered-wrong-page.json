@@ -1,0 +1,72 @@
+{
+  "_note": "Hand-edited copy of lab-a.recorded.json for verifyExtraction tests: S03 cites page 2 of a one-page PDF. Test fixture only.",
+  "model": "claude-sonnet-5-5",
+  "promptVersion": "labExtraction.v2",
+  "output": {
+    "report": {
+      "labReportId": "LAB-A",
+      "labName": "Demo Materials Lab",
+      "projectRef": "ORTAM-DEMO-001",
+      "issuedDate": "October 5 2026"
+    },
+    "results": [
+      {
+        "sampleId": "S01",
+        "layer": "Insulation",
+        "resultLabel": "DETECTED",
+        "asbestosType": "Chrysotile",
+        "percentage": 15,
+        "percentageRaw": "15%",
+        "sourcePage": 1,
+        "sourceText": "S01  Insulation  Detected  Chrysotile  15%",
+        "labNote": null,
+        "confidence": "high"
+      },
+      {
+        "sampleId": "S02",
+        "layer": "Floor tile",
+        "resultLabel": "NOT_DETECTED",
+        "asbestosType": null,
+        "percentage": null,
+        "percentageRaw": "Not reported",
+        "sourcePage": 1,
+        "sourceText": "S02  Floor tile  Not detected  Not reported  Not reported",
+        "labNote": "S02 has two separately reported layers. A tile result must not overwrite the adhesive result.",
+        "confidence": "high"
+      },
+      {
+        "sampleId": "S02",
+        "layer": "Black adhesive",
+        "resultLabel": "DETECTED",
+        "asbestosType": "Chrysotile",
+        "percentage": 2,
+        "percentageRaw": "2%",
+        "sourcePage": 1,
+        "sourceText": "S02  Black adhesive  Detected  Chrysotile  2%",
+        "labNote": "S02 has two separately reported layers. A tile result must not overwrite the adhesive result.",
+        "confidence": "high"
+      },
+      {
+        "sampleId": "S03",
+        "layer": "Textured coating",
+        "resultLabel": "DETECTED",
+        "asbestosType": "Chrysotile",
+        "percentage": 1,
+        "percentageRaw": "1%",
+        "sourcePage": 2,
+        "sourceText": "S03  Textured coating  Detected  Chrysotile  1%",
+        "labNote": null,
+        "confidence": "high"
+      }
+    ],
+    "documentNotes": [
+      {
+        "page": 1,
+        "text": "S02 has two separately reported layers. A tile result must not overwrite the adhesive result.",
+        "relatedSampleIds": [
+          "S02"
+        ]
+      }
+    ]
+  }
+}

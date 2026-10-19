@@ -1,6 +1,6 @@
 # Data model
 
-SQLite through Prisma 6 (`prisma/schema.prisma`, one migration `init`). SQLite has no enums, so every status column is
+SQLite through Prisma 6 (`prisma/schema.prisma`; migrations `init` and `lab_extraction`). SQLite has no enums, so every status column is
 a plain `String` and every JSON column is `String`. Their allowed values live in code and are checked with Zod at the
 service boundary:
 
@@ -60,15 +60,20 @@ the database refusing it, so the employee can see and fix it.
 | Column | Type | Notes |
 |---|---|---|
 | id, projectId | String | |
-| fileName | String | original upload name |
-| sha256 | String | `@@unique([projectId, sha256])`: re-uploading the same PDF reuses the row |
-| storagePath | String | immutable file under `storage/uploads/` |
+| fileName | String | original upload name (base name only) |
+| sha256 | String | `@@unique([projectId, sha256])`: re-uploading the same PDF returns this row, no new results, no AI call |
+| storagePath | String | `uploads/<sha256>.pdf` relative to `STORAGE_DIR`; read-only, shared by projects with the same file (D-020) |
+| sizeBytes | Int | |
 | pageCount | Int | |
-| pagesTextJson | String | JSON `string[]`, index 0 = page 1 |
-| labReportId | String? | e.g. `LAB-A`, from extraction |
-| status | String | `UPLOADED` \| `EXTRACTING` \| `EXTRACTED` \| `FAILED` |
-| error | String? | readable failure reason |
-| createdAt | DateTime | |
+| pagesTextJson | String | JSON `[{ page, lines: string[] }]`, page 1-based; table cells separated by two spaces |
+| labReportId, labName, projectRef, issuedDate | String? | report header as printed, from the latest successful extraction |
+| documentNotesJson | String | JSON `[{ page, text, relatedSampleIds, verified }]`, default `[]` |
+| warningsJson | String | JSON `[{ code, message }]` document-level verification warnings, default `[]` |
+| status | String | `UPLOADED` → `EXTRACTING` → `NEEDS_REVIEW` → `ACCEPTED`, or `FAILED` |
+| error | String? | readable failure reason, only while `FAILED` |
+| errorCode | String? | `NO_TEXT` (no Retry) or an AI error code from `src/server/ai/aiErrors.ts` |
+| extractionStartedAt | DateTime? | set while `EXTRACTING`; after 10 minutes the run counts as interrupted (D-019) |
+| createdAt, updatedAt | DateTime | |
 
 ## AiRun
 
@@ -79,14 +84,15 @@ One row per model call, successful or not.
 | id, projectId | String | |
 | labDocumentId | String? | set for extraction runs; `SET NULL` if the document goes |
 | kind | String | `EXTRACTION` \| `NARRATIVE` |
-| model | String | from `ANTHROPIC_MODEL` |
+| model | String | the model that answered (`response.model`; a fallback model if the requested one declined) |
 | responseId | String? | API message ID |
 | inputTokens, outputTokens | Int? | |
 | durationMs | Int | |
 | status | String | `RUNNING` \| `SUCCEEDED` \| `FAILED` |
-| error | String? | |
-| promptVersion | String | versioned prompt file name |
-| rawResponse | String? | model output as received |
+| error | String? | readable reason, API keys redacted |
+| stopReason | String? | API `stop_reason`, e.g. `end_turn`, `max_tokens`, `refusal` |
+| promptVersion | String | versioned prompt file name, e.g. `labExtraction.v2` |
+| rawResponse | String? | the whole API message as received (JSON); `NULL` when no answer arrived |
 | createdAt | DateTime | |
 
 ## LabResult
@@ -108,14 +114,16 @@ One sample layer from a lab report. AI values and employee corrections are kept 
 | sourcePage | Int | 1-based page in the PDF |
 | sourceText | String | quoted supporting text |
 | labNote | String? | |
-| confidence | String? | `HIGH` \| `MEDIUM` \| `LOW` from the AI; `NULL` for `MANUAL` |
-| evidenceVerified | Boolean | quote found on the cited page |
+| confidence | String? | `HIGH` \| `MEDIUM` \| `LOW` from the AI, lowered to `LOW` when a verification check failed; `NULL` for `MANUAL` |
+| evidenceVerified | Boolean | quote found on exactly one line of the cited page |
+| verificationJson | String | JSON `[{ code, message }]` flags from `verifyExtraction`, default `[]` |
 | reviewStatus | String | `PENDING` \| `ACCEPTED` \| `REJECTED` |
 | rejectReason | String? | |
 | createdAt, updatedAt | DateTime | |
 
 The current columns are the employee-reviewed values; `aiJson` is the untouched original. Every change to a current
-value writes a `Correction`.
+value writes a `Correction`. Re-extraction replaces a document's `AI` rows in one transaction; accepted or corrected rows
+are kept unless the employee confirms (D-022).
 
 ## Correction
 
@@ -182,3 +190,6 @@ One row per project (`projectId` is the primary key).
 - `LabResult.createdAt` added for stable ordering.
 - `ReportNarrative.itemKey` is `String @default("")` instead of `String?` so the unique index works in SQLite.
 - `MaterialZone` has `@@unique([projectId, materialId])`.
+- Phase 3 (`lab_extraction` migration): `LabDocument` gained `sizeBytes`, the report header columns, `documentNotesJson`,
+  `warningsJson`, `errorCode`, `extractionStartedAt` and `updatedAt`, and its status `EXTRACTED` became `NEEDS_REVIEW`
+  plus `ACCEPTED`; `pagesTextJson` holds lines per page. `AiRun.stopReason` and `LabResult.verificationJson` were added.
