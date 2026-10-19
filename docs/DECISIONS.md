@@ -61,3 +61,34 @@ does not call the API (no cost, works offline) and never returns the value. A pl
 
 Next.js 16 generates global route types such as `LayoutProps` into `.next/types`. On a fresh clone that folder
 does not exist, so `npm run typecheck` is `next typegen && tsc --noEmit`.
+
+## D-009 · Money rounding: each amount to the cent, integer arithmetic (2026-10-19)
+
+Rates and allowances are integer cents. A zone quantity has at most two decimals (`materialZoneSchema`), so it is
+converted to hundredths of a unit and multiplied by the rate in cents with exact integer arithmetic. The removal amount
+and the replacement amount are each rounded half-up to whole cents, and `lineTotal = removal + replacement`. This way
+the removal subtotal plus the replacement subtotal always equals the zone subtotal printed in the report. Contingency is
+`round(direct × 20 / 100)`. `formatCad` formats from integer cents, never from a float.
+
+## D-010 · Review issue severity (2026-10-19)
+
+- **blocking**: an ID or data problem the employee must resolve or explicitly flag: unmatched lab sample, a sample ID in
+  two zones, conflicting results, a registered sample with no lab result (often a typo such as `S7`), and an unknown or
+  unit-mismatched rate on a zone that would be priced.
+- **warning**: a legitimate limitation that the report carries as-is: inconclusive layer, unsampled or inaccessible
+  zone, detected zone with unknown quantity or no rate reference, a bad rate on a zone that is not priced anyway, and
+  the same lab report ID in two uploaded files (identical rows are already counted once).
+
+Issue keys are `TYPE:id[:id…]` built from the zone ID, normalized sample ID, layer key or lab report ID, so they stay
+stable when the match is recomputed and an employee's resolution can be stored against them.
+
+A sample ID listed in two zones keeps its lab results under both zones until the employee fixes the register. Hiding
+them would make the sample look "awaiting result", which is false; the blocking issue keeps the report from looking
+final.
+
+## D-011 · Layer comparison (2026-10-19)
+
+Layers of one sample are compared after trimming, collapsing whitespace and lower-casing ("Black adhesive" equals
+"black  adhesive"). Different wording stays two separate layers; nothing is merged by similarity. The same sample and
+layer with different labels is a CONFLICT layer: it does not count as detected, and the zone is DETECTED only if
+another layer is detected without conflict.
