@@ -128,3 +128,11 @@
     @apply font-sans;
   }
 }
+/* Quoted evidence in the PDF source viewer (react-pdf text layer, see src/components/review/pdf-page-view.tsx).
+   The text layer is transparent over the rendered page, so only the background shows. */
+.textLayer mark.evidence-mark {
+  color: transparent;
+  background-color: rgb(250 204 21 / 0.45);
+  box-shadow: 0 0 0 1px rgb(202 138 4 / 0.9);
+  border-radius: 2px;
+}

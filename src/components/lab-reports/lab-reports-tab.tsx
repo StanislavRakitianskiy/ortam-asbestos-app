@@ -10,7 +10,8 @@ import { LabDocumentCard } from "@/components/lab-reports/lab-document-card";
 import { UploadDropzone } from "@/components/lab-reports/upload-dropzone";
 import { api, queryKeys } from "@/lib/api";
 import { formatDateTime } from "@/lib/dates";
-import type { LabDocumentDto, UploadOutcome } from "@/server/services/labDocumentService";
+import type { LabDocumentDto } from "@/server/services/labDocumentDto";
+import type { UploadOutcome } from "@/server/services/labDocumentService";
 
 const POLL_MS = 2000;
 

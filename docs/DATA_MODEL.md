@@ -66,10 +66,10 @@ the database refusing it, so the employee can see and fix it.
 | sizeBytes | Int | |
 | pageCount | Int | |
 | pagesTextJson | String | JSON `[{ page, lines: string[] }]`, page 1-based; table cells separated by two spaces |
-| labReportId, labName, projectRef, issuedDate | String? | report header as printed, from the latest successful extraction |
+| labReportId, labName, projectRef, issuedDate | String? | report header as printed, from the latest successful extraction; `labReportId` may be entered by the employee instead, and then a new extraction keeps it |
 | documentNotesJson | String | JSON `[{ page, text, relatedSampleIds, verified }]`, default `[]` |
 | warningsJson | String | JSON `[{ code, message }]` document-level verification warnings, default `[]` |
-| status | String | `UPLOADED` → `EXTRACTING` → `NEEDS_REVIEW` → `ACCEPTED`, or `FAILED` |
+| status | String | `UPLOADED` → `EXTRACTING` → `NEEDS_REVIEW` → `ACCEPTED` (every row accepted or rejected; back to `NEEDS_REVIEW` when a row is pending again), or `FAILED` |
 | error | String? | readable failure reason, only while `FAILED` |
 | errorCode | String? | `NO_TEXT` (no Retry) or an AI error code from `src/server/ai/aiErrors.ts` |
 | extractionStartedAt | DateTime? | set while `EXTRACTING`; after 10 minutes the run counts as interrupted (D-019) |
@@ -115,15 +115,16 @@ One sample layer from a lab report. AI values and employee corrections are kept 
 | sourceText | String | quoted supporting text |
 | labNote | String? | |
 | confidence | String? | `HIGH` \| `MEDIUM` \| `LOW` from the AI, lowered to `LOW` when a verification check failed; `NULL` for `MANUAL` |
-| evidenceVerified | Boolean | quote found on exactly one line of the cited page |
-| verificationJson | String | JSON `[{ code, message }]` flags from `verifyExtraction`, default `[]` |
-| reviewStatus | String | `PENDING` \| `ACCEPTED` \| `REJECTED` |
-| rejectReason | String? | |
+| evidenceVerified | Boolean | quote found on exactly one line of the cited page; re-checked after every review change |
+| verificationJson | String | JSON `[{ code, message }]` flags from `verifyExtraction`, recomputed on the current values after every review change (D-025), default `[]` |
+| reviewStatus | String | `PENDING` \| `ACCEPTED` \| `REJECTED` (values in `src/domain/labReview.ts`) |
+| rejectReason | String? | required when rejecting; cleared on accept or reopen |
 | createdAt, updatedAt | DateTime | |
 
 The current columns are the employee-reviewed values; `aiJson` is the untouched original. Every change to a current
-value writes a `Correction`. Re-extraction replaces a document's `AI` rows in one transaction; accepted or corrected rows
-are kept unless the employee confirms (D-022).
+value writes a `Correction`. Re-extraction replaces a document's untouched `AI` drafts in one transaction; accepted or
+corrected rows and `MANUAL` rows are kept (D-023). Only `ACCEPTED` rows of `ACCEPTED` documents are used for matching and
+the report (D-024).
 
 ## Correction
 
@@ -132,9 +133,9 @@ Audit log of employee edits.
 | Column | Type | Notes |
 |---|---|---|
 | id, projectId | String | |
-| entity, entityId | String | e.g. `LabResult`, its id |
-| field | String | |
-| oldValue, newValue | String? | JSON-encoded |
+| entity, entityId | String | `LabResult` or `LabDocument`, and its id |
+| field | String | for `LabResult`: an editable field (`sampleId`, `layer`, `resultLabel`, `asbestosType`, `percentage`, `labNote`), or `row` for a row added by hand; for `LabDocument`: `labReportId` |
+| oldValue, newValue | String? | JSON-encoded, `NULL` when the value is absent; for `row` the new value is the added row |
 | reason | String | required |
 | createdAt | DateTime | |
 

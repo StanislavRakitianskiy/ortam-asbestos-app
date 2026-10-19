@@ -1,7 +1,15 @@
+import type {
+  LabReportIdInput,
+  LabResultCorrectionInput,
+  LabResultDecisionInput,
+  ManualLabResultInput,
+} from "@/domain/labReviewInput";
 import type { ProjectCreateInput, ProjectUpdateInput, ZoneCreateInput, ZoneUpdateInput } from "@/domain/projectInput";
 import type { MaterialZone } from "@/domain/types";
 import type { ApiErrorBody } from "@/server/http";
-import type { AiRunDetail, LabDocumentDto, UploadOutcome } from "@/server/services/labDocumentService";
+import type { AiRunDetail, LabDocumentDto } from "@/server/services/labDocumentDto";
+import type { UploadOutcome } from "@/server/services/labDocumentService";
+import type { BulkAcceptOutcome } from "@/server/services/labReviewService";
 import type { ProjectDetail, ProjectDto, ProjectSummary } from "@/server/services/projectService";
 
 /** A failed API call with the server's readable message and, for HTTP 400, the invalid fields. */
@@ -49,6 +57,13 @@ export const queryKeys = {
 };
 
 const projectUrl = (projectId: string) => `/api/projects/${encodeURIComponent(projectId)}`;
+const documentUrl = (projectId: string, documentId: string) =>
+  `${projectUrl(projectId)}/lab-documents/${encodeURIComponent(documentId)}`;
+const resultUrl = (projectId: string, documentId: string, resultId: string) =>
+  `${documentUrl(projectId, documentId)}/results/${encodeURIComponent(resultId)}`;
+
+/** The uploaded PDF as stored, for the source viewer and "Open PDF". */
+export const labDocumentFileUrl = (projectId: string, documentId: string) => `${documentUrl(projectId, documentId)}/file`;
 
 export const api = {
   listProjects: () => request<ProjectSummary[]>("/api/projects"),
@@ -83,6 +98,16 @@ export const api = {
     }),
   getAiRun: (projectId: string, runId: string) =>
     request<AiRunDetail>(`${projectUrl(projectId)}/ai-runs/${encodeURIComponent(runId)}`),
+  correctLabResult: (projectId: string, documentId: string, resultId: string, input: LabResultCorrectionInput) =>
+    request<LabDocumentDto>(resultUrl(projectId, documentId, resultId), { method: "PATCH", body: input }),
+  decideLabResult: (projectId: string, documentId: string, resultId: string, input: LabResultDecisionInput) =>
+    request<LabDocumentDto>(`${resultUrl(projectId, documentId, resultId)}/review`, { method: "POST", body: input }),
+  acceptVerifiedLabResults: (projectId: string, documentId: string) =>
+    request<BulkAcceptOutcome>(`${documentUrl(projectId, documentId)}/accept-verified`, { method: "POST" }),
+  addLabResult: (projectId: string, documentId: string, input: ManualLabResultInput) =>
+    request<LabDocumentDto>(`${documentUrl(projectId, documentId)}/results`, { method: "POST", body: input }),
+  setLabReportId: (projectId: string, documentId: string, input: LabReportIdInput) =>
+    request<LabDocumentDto>(documentUrl(projectId, documentId), { method: "PATCH", body: input }),
 };
 
 /** First message per field, for showing next to inputs. */

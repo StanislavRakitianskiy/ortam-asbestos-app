@@ -211,15 +211,19 @@ describe("lab document extraction", () => {
     await expect(service.startExtraction(projectId, documentId, { replaceReviewed: false })).rejects.toThrow("already running");
   });
 
-  it("keeps accepted rows unless the employee confirms replacing them", async () => {
-    const { service, drain, projectId, documentId } = await extracted(fakeMessage(recordedA));
+  it("keeps accepted rows when extracting again and replaces only the unreviewed drafts", async () => {
+    const { service, drain, projectId, documentId } = await extracted(fakeMessage(recordedA), fakeMessage(recordedA));
+    const before = await testDb.db.labResult.findMany({ select: { id: true } });
     const adhesive = await testDb.db.labResult.findFirstOrThrow({ where: { layer: "Black adhesive" } });
     await testDb.db.labResult.update({ where: { id: adhesive.id }, data: { reviewStatus: "ACCEPTED" } });
 
-    const refusal = await service.startExtraction(projectId, documentId, { replaceReviewed: false }).catch((error: unknown) => error);
-    expect(refusal).toBeInstanceOf(ConflictError);
-    expect((refusal as ConflictError).code).toBe("REVIEWED_RESULTS");
-    expect(await testDb.db.labResult.findUnique({ where: { id: adhesive.id } })).not.toBeNull();
+    await service.startExtraction(projectId, documentId, { replaceReviewed: false });
+    await drain();
+    const after = await testDb.db.labResult.findMany();
+    // The accepted adhesive row is kept as it was; the new draft of the same layer is not added next to it.
+    expect(after).toHaveLength(4);
+    expect(after.find((row) => row.id === adhesive.id)).toMatchObject({ reviewStatus: "ACCEPTED", layer: "Black adhesive" });
+    expect(after.filter((row) => row.id !== adhesive.id).some((row) => before.some((old) => old.id === row.id))).toBe(false);
 
     await service.startExtraction(projectId, documentId, { replaceReviewed: true });
     await drain();
@@ -228,12 +232,15 @@ describe("lab document extraction", () => {
   });
 
   it("treats a corrected row as reviewed too", async () => {
-    const { service, projectId, documentId } = await extracted();
+    const { service, drain, projectId, documentId } = await extracted(fakeMessage(recordedA));
     const row = await testDb.db.labResult.findFirstOrThrow();
     await testDb.db.correction.create({
       data: { projectId, entity: "LabResult", entityId: row.id, field: "layer", oldValue: '"a"', newValue: '"b"', reason: "typo" },
     });
-    await expect(service.startExtraction(projectId, documentId, { replaceReviewed: false })).rejects.toThrow("accepted or corrected");
+    await service.startExtraction(projectId, documentId, { replaceReviewed: false });
+    await drain();
+    expect(await testDb.db.labResult.findUnique({ where: { id: row.id } })).not.toBeNull();
+    expect(await testDb.db.labResult.count()).toBe(4);
   });
 
   it("shows a failed retry as failed, with a readable reason and no results", async () => {

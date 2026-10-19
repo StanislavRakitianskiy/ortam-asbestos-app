@@ -3,6 +3,7 @@ import { normalizeSampleId } from "@/domain/sampleId";
 import type { ResultLabel } from "@/domain/types";
 import type { Confidence } from "@/server/dbEnums";
 import type { PageText } from "@/server/pdf/extractPages";
+import { findQuoteLines, normalizeEvidence } from "@/lib/pdfText";
 import { LenientLabExtractionSchema, type ParsedLabExtraction, type ParsedLabResult } from "@/server/ai/labExtractionSchema";
 
 /**
@@ -90,19 +91,7 @@ export type VerifiedExtraction = {
 
 export type VerifyContext = { pages: readonly PageText[]; projectCode: string };
 
-/**
- * Text comparison ignores only presentation: Unicode compatibility forms, typographic quotes and dashes, and runs
- * of whitespace (the column gaps). Letters, digits and punctuation must match exactly.
- */
-export function normalizeEvidence(text: string): string {
-  return text
-    .normalize("NFKC")
-    .replace(/[‘’‚‛′]/g, "'")
-    .replace(/[“”„‟″]/g, '"')
-    .replace(/[‐-―−]/g, "-")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+export { normalizeEvidence };
 
 const NOT_DETECTED = /\bnot detected\b/i;
 const DETECTED = /(?<!\bnot )\bdetected\b/i;
@@ -126,7 +115,7 @@ const LABEL_TEXT: Record<ResultLabel, string> = {
 };
 
 /** Check (d): the cited line names the sample, the layer and the printed result that the label claims. */
-function checkLine(row: ParsedLabResult, line: string): Flag<ResultFlagCode>[] {
+function checkLine(row: CheckedRow, line: string): Flag<ResultFlagCode>[] {
   const flags: Flag<ResultFlagCode>[] = [];
   const sampleId = normalizeSampleId(row.sampleId);
   if (sampleId !== "" && !containsSampleId(line, sampleId)) {
@@ -166,7 +155,7 @@ const lineKey = (cited: CitedLine) => `${cited.page}:${cited.index}`;
 
 /** Checks (b) and (c): the cited page exists and the quote is on exactly one line of it. */
 function findEvidence(
-  row: ParsedLabResult,
+  row: CheckedRow,
   pages: readonly PageText[],
 ): { cited: CitedLine | null; line: string | null; flags: Flag<ResultFlagCode>[] } {
   const page = pages.find((candidate) => candidate.page === row.sourcePage);
@@ -180,10 +169,10 @@ function findEvidence(
   const quote = normalizeEvidence(row.sourceText);
   if (quote === "") return { cited: null, line: null, flags: [{ code: "MISSING_VALUE", message: "The quoted source text is empty." }] };
 
-  const matches = page.lines
-    .map((text, index) => ({ index, text: normalizeEvidence(text) }))
-    .filter((line) => line.text.includes(quote));
-  if (matches.length === 1) return { cited: { page: page.page, index: matches[0].index }, line: matches[0].text, flags: [] };
+  const matches = findQuoteLines(page.lines, quote);
+  if (matches.length === 1) {
+    return { cited: { page: page.page, index: matches[0] }, line: normalizeEvidence(page.lines[matches[0]]), flags: [] };
+  }
   if (matches.length > 1) {
     return {
       cited: null,
@@ -206,7 +195,7 @@ function findEvidence(
   };
 }
 
-const resultKey = (row: Pick<ParsedLabResult, "sampleId" | "layer">) => `${normalizeSampleId(row.sampleId)}|${layerKey(row.layer)}`;
+const resultKey = (row: Pick<CheckedRow, "sampleId" | "layer">) => `${normalizeSampleId(row.sampleId)}|${layerKey(row.layer)}`;
 
 /** Lines that look like result rows: at least three table cells, one of which is exactly a printed result. */
 function resultRowLines(pages: readonly PageText[]) {
@@ -220,13 +209,30 @@ function resultRowLines(pages: readonly PageText[]) {
   );
 }
 
-/** Checks (b)–(h) for a parsed extraction. Pure: same input, same output. */
-export function verifyExtraction(extraction: ParsedExtraction, context: VerifyContext): VerifiedExtraction {
-  const { pages } = context;
-  const documentText = normalizeEvidence(pages.flatMap((page) => page.lines).join(" "));
-  const warnings: Flag<DocumentWarningCode>[] = [];
+/** The values of a result row that are checked against the page text: an AI row, or the current values after review. */
+export type CheckedRow = Pick<
+  ParsedLabResult,
+  "sampleId" | "layer" | "resultLabel" | "asbestosType" | "percentage" | "percentageRaw" | "sourcePage" | "sourceText" | "labNote"
+>;
 
-  const rows = extraction.results.map((row, index) => {
+export type RowCheck = {
+  flags: Flag<ResultFlagCode>[];
+  evidenceVerified: boolean;
+  /** null when the percentage was outside 0..100. */
+  percentage: number | null;
+};
+
+export type RowsCheck = { rows: RowCheck[]; warnings: Flag<"LINE_NOT_EXTRACTED">[] };
+
+/**
+ * Checks (b)–(e), (g) and (h) of the result rows of one document against its page text. Used for the AI answer and
+ * again for the current rows after every review change. Pure: same input, same output.
+ */
+export function checkResultRows(rows: readonly CheckedRow[], pages: readonly PageText[]): RowsCheck {
+  const documentText = normalizeEvidence(pages.flatMap((page) => page.lines).join(" "));
+  const warnings: Flag<"LINE_NOT_EXTRACTED">[] = [];
+
+  const checked = rows.map((row) => {
     const flags: Flag<ResultFlagCode>[] = [];
     if (row.sampleId.trim() === "") flags.push({ code: "MISSING_VALUE", message: "The sample ID is empty." });
     if (row.layer.trim() === "") flags.push({ code: "MISSING_VALUE", message: "The layer is empty." });
@@ -243,13 +249,13 @@ export function verifyExtraction(extraction: ParsedExtraction, context: VerifyCo
     if (row.labNote !== null && normalizeEvidence(row.labNote) !== "" && !documentText.includes(normalizeEvidence(row.labNote))) {
       flags.push({ code: "LAB_NOTE_NOT_FOUND", message: "The lab note is not printed in the document word for word." });
     }
-    return { row, index, flags, percentage, cited: evidence.cited, evidenceVerified: evidence.line !== null };
+    return { row, flags, percentage, cited: evidence.cited, evidenceVerified: evidence.line !== null };
   });
 
   // (g) the same sample and layer twice in one document.
   const counts = new Map<string, number>();
-  for (const { row } of rows) counts.set(resultKey(row), (counts.get(resultKey(row)) ?? 0) + 1);
-  for (const item of rows) {
+  for (const { row } of checked) counts.set(resultKey(row), (counts.get(resultKey(row)) ?? 0) + 1);
+  for (const item of checked) {
     if ((counts.get(resultKey(item.row)) ?? 0) > 1) {
       item.flags.push({
         code: "DUPLICATE_SAMPLE_LAYER",
@@ -258,15 +264,15 @@ export function verifyExtraction(extraction: ParsedExtraction, context: VerifyCo
     }
   }
 
-  // (h) every printed result row must be cited by an extracted result, otherwise a layer was merged or skipped.
-  const citedLines = new Set(rows.flatMap((item) => (item.cited ? [lineKey(item.cited)] : [])));
+  // (h) every printed result row must be cited by a result, otherwise a layer was merged or skipped.
+  const citedLines = new Set(checked.flatMap((item) => (item.cited ? [lineKey(item.cited)] : [])));
   for (const line of resultRowLines(pages)) {
     if (citedLines.has(lineKey(line))) continue;
     warnings.push({
       code: "LINE_NOT_EXTRACTED",
       message: `Page ${line.page}: the result line "${normalizeEvidence(line.text)}" is not cited by any extracted result. A layer may have been merged or skipped.`,
     });
-    for (const item of rows) {
+    for (const item of checked) {
       if (normalizeSampleId(item.row.sampleId) === line.firstCell) {
         item.flags.push({
           code: "UNCITED_LINE_FOR_SAMPLE",
@@ -275,6 +281,18 @@ export function verifyExtraction(extraction: ParsedExtraction, context: VerifyCo
       }
     }
   }
+
+  return {
+    rows: checked.map(({ flags, evidenceVerified, percentage }) => ({ flags, evidenceVerified, percentage })),
+    warnings,
+  };
+}
+
+/** Checks (b)–(h) for a parsed extraction. Pure: same input, same output. */
+export function verifyExtraction(extraction: ParsedExtraction, context: VerifyContext): VerifiedExtraction {
+  const { pages } = context;
+  const checked = checkResultRows(extraction.results, pages);
+  const warnings: Flag<DocumentWarningCode>[] = [...checked.warnings];
 
   // (f) the report should belong to this project.
   const projectRef = extraction.report.projectRef?.trim() ?? "";
@@ -286,9 +304,13 @@ export function verifyExtraction(extraction: ParsedExtraction, context: VerifyCo
       message: `The lab report is for project "${projectRef}", but this project is "${context.projectCode}".`,
     });
   }
-  if (rows.length === 0) warnings.push({ code: "NO_RESULTS", message: "No result rows were extracted from this document." });
+  if (extraction.results.length === 0) warnings.push({ code: "NO_RESULTS", message: "No result rows were extracted from this document." });
   if ((extraction.report.labReportId?.trim() ?? "") === "") {
-    warnings.push({ code: "LAB_REPORT_ID_MISSING", message: "No lab report ID was extracted. Check the report header and enter it during review." });
+    warnings.push({
+      code: "LAB_REPORT_ID_MISSING",
+      message:
+        "No lab report ID was extracted. Check the report header and enter the ID on the Review tab; until then results from this file are identified by its file name.",
+    });
   }
 
   const notes = extraction.documentNotes.map((note): VerifiedNote => {
@@ -301,21 +323,24 @@ export function verifyExtraction(extraction: ParsedExtraction, context: VerifyCo
 
   return {
     report: extraction.report,
-    results: rows.map(({ row, index, flags, percentage, evidenceVerified }) => ({
-      sampleId: row.sampleId.trim(),
-      layer: row.layer.trim(),
-      resultLabel: row.resultLabel,
-      asbestosType: row.asbestosType,
-      percentage,
-      percentageRaw: row.percentageRaw,
-      sourcePage: row.sourcePage,
-      sourceText: row.sourceText,
-      labNote: row.labNote,
-      confidence: flags.length > 0 ? "LOW" : row.confidence,
-      evidenceVerified,
-      flags,
-      aiJson: JSON.stringify(extraction.rawResults[index] ?? row),
-    })),
+    results: extraction.results.map((row, index) => {
+      const { flags, percentage, evidenceVerified } = checked.rows[index];
+      return {
+        sampleId: row.sampleId.trim(),
+        layer: row.layer.trim(),
+        resultLabel: row.resultLabel,
+        asbestosType: row.asbestosType,
+        percentage,
+        percentageRaw: row.percentageRaw,
+        sourcePage: row.sourcePage,
+        sourceText: row.sourceText,
+        labNote: row.labNote,
+        confidence: flags.length > 0 ? "LOW" : row.confidence,
+        evidenceVerified,
+        flags,
+        aiJson: JSON.stringify(extraction.rawResults[index] ?? row),
+      };
+    }),
     notes,
     warnings,
   };

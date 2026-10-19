@@ -1,25 +1,28 @@
 import path from "node:path";
-import { Prisma, type AiRun, type LabDocument, type LabResult, type PrismaClient } from "@prisma/client";
-import { z } from "zod";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import { layerKey } from "@/domain/matching";
 import { normalizeSampleId } from "@/domain/sampleId";
-import { resultLabelSchema, type ResultLabel } from "@/domain/types";
 import { NO_TEXT_CODE, NO_TEXT_MESSAGE, redactSecrets, type AiErrorCode } from "@/server/ai/aiErrors";
 import { anthropicSender, extractLabReport, type ExtractLabReportDeps, type RunLog } from "@/server/ai/extractLabReport";
-import { normalizeEvidence, verifyExtraction, type VerifiedNote, type VerifiedResult } from "@/server/ai/verifyExtraction";
+import { verifyExtraction, type VerifiedResult } from "@/server/ai/verifyExtraction";
 import { getDb } from "@/server/db";
-import {
-  confidenceSchema,
-  labDocumentStatusSchema,
-  labResultOriginSchema,
-  reviewStatusSchema,
-  type Confidence,
-  type LabDocumentStatus,
-} from "@/server/dbEnums";
+import type { LabDocumentStatus } from "@/server/dbEnums";
 import { describeAnthropicKey, getEnv } from "@/server/env";
 import { ConflictError, NotFoundError, ValidationError } from "@/server/errors";
-import { extractPages, hasSelectableText, PdfReadError, type PageText } from "@/server/pdf/extractPages";
-import { saveUpload, sha256Hex } from "@/server/storage/uploads";
+import { extractPages, hasSelectableText, PdfReadError } from "@/server/pdf/extractPages";
+import {
+  documentInclude,
+  LAB_DOCUMENT_ENTITY,
+  LAB_REPORT_ID_FIELD,
+  pagesSchema,
+  toDocumentDtos,
+  toRunSummary,
+  type AiRunDetail,
+  type DocumentRow,
+  type LabDocumentDto,
+} from "@/server/services/labDocumentDto";
+import { refreshDocumentReview } from "@/server/services/labReviewSync";
+import { readUpload, saveUpload, sha256Hex } from "@/server/storage/uploads";
 
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 /** An extraction still EXTRACTING after this long was cut off (server restart); it is shown as failed with Retry. */
@@ -27,79 +30,8 @@ export const STALE_EXTRACTION_MS = 10 * 60 * 1000;
 
 const PDF_MAGIC = "%PDF-";
 
-/** 409 code: re-extraction would replace rows the employee reviewed, so it needs confirmation. */
-export const REVIEWED_RESULTS_CONFLICT = "REVIEWED_RESULTS";
-
 /** One file from a multipart upload. `read` is only called after the size check. */
 export type UploadFile = { name: string; type: string; size: number; read: () => Promise<Uint8Array> };
-
-export type AiRunSummary = {
-  id: string;
-  model: string;
-  promptVersion: string;
-  status: string;
-  inputTokens: number | null;
-  outputTokens: number | null;
-  durationMs: number;
-  error: string | null;
-  hasRawResponse: boolean;
-  createdAt: string;
-};
-
-export type AiRunDetail = AiRunSummary & {
-  responseId: string | null;
-  stopReason: string | null;
-  rawResponse: string | null;
-};
-
-/** A verification flag or warning as stored: a stable code and a readable message. */
-export type FlagDto = { code: string; message: string };
-
-export type LabResultDto = {
-  id: string;
-  origin: string;
-  sampleId: string;
-  layer: string;
-  resultLabel: ResultLabel;
-  asbestosType: string | null;
-  percentage: number | null;
-  percentageRaw: string | null;
-  sourcePage: number;
-  sourceText: string;
-  labNote: string | null;
-  confidence: Confidence | null;
-  evidenceVerified: boolean;
-  flags: FlagDto[];
-  reviewStatus: string;
-};
-
-export type LabDocumentDto = {
-  id: string;
-  projectId: string;
-  fileName: string;
-  sha256: string;
-  sizeBytes: number;
-  pageCount: number;
-  status: LabDocumentStatus;
-  error: string | null;
-  errorCode: string | null;
-  /** True when Retry can help (every failure except a PDF without text). */
-  retryable: boolean;
-  labReportId: string | null;
-  labName: string | null;
-  projectRef: string | null;
-  issuedDate: string | null;
-  notes: VerifiedNote[];
-  warnings: FlagDto[];
-  /** AI draft rows. Empty unless the status is NEEDS_REVIEW or ACCEPTED: a failed or running step shows none. */
-  results: LabResultDto[];
-  /** The run that produced the current results. */
-  extractedBy: AiRunSummary | null;
-  /** The most recent extraction call, successful or not. */
-  lastRun: AiRunSummary | null;
-  createdAt: string;
-  updatedAt: string;
-};
 
 export type UploadOutcome =
   | { fileName: string; outcome: "created"; document: LabDocumentDto }
@@ -116,13 +48,6 @@ export type LabDocumentDeps = {
   now: () => Date;
 };
 
-const pagesSchema = z.array(z.object({ page: z.int().positive(), lines: z.array(z.string()) }));
-const flagsSchema = z.array(z.object({ code: z.string(), message: z.string() }));
-const notesSchema = z.array(
-  z.object({ page: z.int(), text: z.string(), relatedSampleIds: z.array(z.string()), verified: z.boolean() }),
-);
-
-const RESULT_STATUSES: readonly LabDocumentStatus[] = ["NEEDS_REVIEW", "ACCEPTED"];
 const RE_EXTRACTABLE: LabDocumentStatus[] = ["UPLOADED", "NEEDS_REVIEW", "ACCEPTED", "FAILED"];
 
 /** The real Anthropic call configured from .env.local. Tests replace it; the app never does. */
@@ -154,91 +79,6 @@ function cleanFileName(name: string): string {
 const isUniqueViolation = (error: unknown) =>
   error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 
-function toRunSummary(run: AiRun): AiRunSummary {
-  return {
-    id: run.id,
-    model: run.model,
-    promptVersion: run.promptVersion,
-    status: run.status,
-    inputTokens: run.inputTokens,
-    outputTokens: run.outputTokens,
-    durationMs: run.durationMs,
-    error: run.error,
-    hasRawResponse: run.rawResponse !== null,
-    createdAt: run.createdAt.toISOString(),
-  };
-}
-
-/** Position of the cited line in the document, so rows are listed in the order the lab printed them. */
-function documentOrder(pages: readonly PageText[], row: Pick<LabResult, "sourcePage" | "sourceText">): number {
-  const page = pages.find((candidate) => candidate.page === row.sourcePage);
-  const quote = normalizeEvidence(row.sourceText);
-  const index = page?.lines.findIndex((line) => normalizeEvidence(line).includes(quote)) ?? -1;
-  return row.sourcePage * 100_000 + (index === -1 ? 99_999 : index);
-}
-
-function toResultDto(row: LabResult): LabResultDto {
-  return {
-    id: row.id,
-    origin: labResultOriginSchema.parse(row.origin),
-    sampleId: row.sampleId,
-    layer: row.layer,
-    resultLabel: resultLabelSchema.parse(row.resultLabel),
-    asbestosType: row.asbestosType,
-    percentage: row.percentage,
-    percentageRaw: row.percentageRaw,
-    sourcePage: row.sourcePage,
-    sourceText: row.sourceText,
-    labNote: row.labNote,
-    confidence: row.confidence === null ? null : confidenceSchema.parse(row.confidence),
-    evidenceVerified: row.evidenceVerified,
-    flags: flagsSchema.parse(JSON.parse(row.verificationJson)),
-    reviewStatus: reviewStatusSchema.parse(row.reviewStatus),
-  };
-}
-
-type DocumentRow = LabDocument & { results: LabResult[]; aiRuns: AiRun[] };
-
-function toDocumentDto(row: DocumentRow): LabDocumentDto {
-  const status = labDocumentStatusSchema.parse(row.status);
-  const pages = pagesSchema.parse(JSON.parse(row.pagesTextJson));
-  const showResults = RESULT_STATUSES.includes(status);
-  const results = showResults
-    ? [...row.results].sort((first, second) => documentOrder(pages, first) - documentOrder(pages, second)).map(toResultDto)
-    : [];
-  const runs = [...row.aiRuns].sort((first, second) => second.createdAt.getTime() - first.createdAt.getTime());
-  const producingRunId = row.results.find((result) => result.aiRunId !== null)?.aiRunId ?? null;
-  const producingRun = showResults ? runs.find((run) => run.id === producingRunId) : undefined;
-  return {
-    id: row.id,
-    projectId: row.projectId,
-    fileName: row.fileName,
-    sha256: row.sha256,
-    sizeBytes: row.sizeBytes,
-    pageCount: row.pageCount,
-    status,
-    error: status === "FAILED" ? row.error : null,
-    errorCode: status === "FAILED" ? row.errorCode : null,
-    retryable: status === "FAILED" && row.errorCode !== NO_TEXT_CODE,
-    labReportId: row.labReportId,
-    labName: row.labName,
-    projectRef: row.projectRef,
-    issuedDate: row.issuedDate,
-    notes: showResults ? notesSchema.parse(JSON.parse(row.documentNotesJson)) : [],
-    warnings: showResults ? flagsSchema.parse(JSON.parse(row.warningsJson)) : [],
-    results,
-    extractedBy: producingRun ? toRunSummary(producingRun) : null,
-    lastRun: runs[0] ? toRunSummary(runs[0]) : null,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-  };
-}
-
-const documentInclude = {
-  results: true,
-  aiRuns: { where: { kind: "EXTRACTION" } },
-} satisfies Prisma.LabDocumentInclude;
-
 function prismaRunLog(db: PrismaClient, projectId: string, labDocumentId: string): RunLog {
   return {
     async start(meta) {
@@ -253,7 +93,7 @@ function prismaRunLog(db: PrismaClient, projectId: string, labDocumentId: string
   };
 }
 
-/** Rows the employee has already worked on: accepted, or corrected at least once. */
+/** AI rows the employee has already worked on: accepted, or corrected at least once. Re-extraction keeps them. */
 async function reviewedResultIds(tx: Prisma.TransactionClient, projectId: string, labDocumentId: string): Promise<string[]> {
   const rows = await tx.labResult.findMany({ where: { labDocumentId }, select: { id: true, reviewStatus: true, origin: true } });
   const corrected = await tx.correction.findMany({
@@ -342,7 +182,8 @@ export function labDocumentService(overrides: Partial<LabDocumentDeps> = {}) {
 
   /**
    * Calls the AI for a claimed document and stores the verified rows. Re-extraction replaces the document's earlier
-   * AI rows in one transaction; rows the employee accepted or corrected are kept unless replaceReviewed is set.
+   * AI drafts in one transaction; rows the employee accepted or corrected are kept unless replaceReviewed is set, and
+   * rows the employee added are never touched.
    */
   async function runExtraction(documentId: string, replaceReviewed: boolean): Promise<void> {
     const document = await db.labDocument.findUnique({ where: { id: documentId }, include: { project: { select: { code: true } } } });
@@ -362,35 +203,51 @@ export function labDocumentService(overrides: Partial<LabDocumentDeps> = {}) {
         const current = await tx.labDocument.findUnique({ where: { id: document.id }, select: { status: true } });
         if (current?.status !== "EXTRACTING") return;
         const keptIds = replaceReviewed ? [] : await reviewedResultIds(tx, document.projectId, document.id);
-        const kept = await tx.labResult.findMany({ where: { id: { in: keptIds } }, select: { sampleId: true, layer: true } });
+        // A kept row or a row the employee added wins over a new draft of the same sample layer; a rejected one does not.
+        const kept = await tx.labResult.findMany({
+          where: { labDocumentId: document.id, reviewStatus: { not: "REJECTED" }, OR: [{ id: { in: keptIds } }, { origin: "MANUAL" }] },
+          select: { sampleId: true, layer: true },
+        });
         const keptKeys = new Set(kept.map((row) => `${normalizeSampleId(row.sampleId)}|${layerKey(row.layer)}`));
         await tx.labResult.deleteMany({ where: { labDocumentId: document.id, origin: "AI", id: { notIn: keptIds } } });
         await tx.labResult.createMany({
           data: verified.results
-            // A kept (reviewed) row wins over a new draft of the same sample layer.
             .filter((row) => !keptKeys.has(`${normalizeSampleId(row.sampleId)}|${layerKey(row.layer)}`))
             .map((row) => resultData(document.id, outcome.runId, row)),
         });
+        // A lab report ID the employee entered wins over the AI's reading, and its "missing" warning no longer applies.
+        const enteredId = await tx.correction.findFirst({
+          where: { projectId: document.projectId, entity: LAB_DOCUMENT_ENTITY, entityId: document.id, field: LAB_REPORT_ID_FIELD },
+          select: { id: true },
+        });
+        const warnings = enteredId ? verified.warnings.filter((warning) => warning.code !== "LAB_REPORT_ID_MISSING") : verified.warnings;
         await tx.labDocument.update({
           where: { id: document.id },
           data: {
             status: "NEEDS_REVIEW",
-            labReportId: verified.report.labReportId,
+            labReportId: enteredId ? undefined : verified.report.labReportId,
             labName: verified.report.labName,
             projectRef: verified.report.projectRef,
             issuedDate: verified.report.issuedDate,
             documentNotesJson: JSON.stringify(verified.notes),
-            warningsJson: JSON.stringify(verified.warnings),
+            warningsJson: JSON.stringify(warnings),
             error: null,
             errorCode: null,
             extractionStartedAt: null,
           },
         });
+        // Checks the new drafts together with the kept rows and accepts the document if nothing is pending.
+        await refreshDocumentReview(tx, document.id);
       });
     } catch (error) {
       console.error(`Lab extraction failed for document ${document.id}: ${redactSecrets(String(error))}`);
       await markFailed(document.id, "UNKNOWN", "The extraction failed unexpectedly. Retry; if it fails again, check the server log.");
     }
+  }
+
+  async function toDto(projectId: string, row: DocumentRow): Promise<LabDocumentDto> {
+    const [document] = await toDocumentDtos(db, projectId, [row]);
+    return document;
   }
 
   async function uploadOne(projectId: string, file: UploadFile): Promise<UploadOutcome> {
@@ -410,7 +267,7 @@ export function labDocumentService(overrides: Partial<LabDocumentDeps> = {}) {
         where: { projectId_sha256: { projectId, sha256 } },
         include: documentInclude,
       });
-      return existing ? { fileName, outcome: "duplicate", document: toDocumentDto(existing) } : null;
+      return existing ? { fileName, outcome: "duplicate", document: await toDto(projectId, existing) } : null;
     };
     const earlier = await duplicate();
     if (earlier) return earlier;
@@ -454,7 +311,7 @@ export function labDocumentService(overrides: Partial<LabDocumentDeps> = {}) {
         if (await claim(created.id, ["UPLOADED"])) await runExtraction(created.id, false);
       });
     }
-    return { fileName, outcome: "created", document: toDocumentDto(created) };
+    return { fileName, outcome: "created", document: await toDto(projectId, created) };
   }
 
   return {
@@ -462,13 +319,30 @@ export function labDocumentService(overrides: Partial<LabDocumentDeps> = {}) {
       await findProject(projectId);
       await expireStale(projectId);
       const rows = await db.labDocument.findMany({ where: { projectId }, orderBy: { createdAt: "asc" }, include: documentInclude });
-      return rows.map(toDocumentDto);
+      return toDocumentDtos(db, projectId, rows);
     },
 
     async get(projectId: string, documentId: string): Promise<LabDocumentDto> {
       await findProject(projectId);
       await expireStale(projectId);
-      return toDocumentDto(await loadDocument(projectId, documentId));
+      return toDto(projectId, await loadDocument(projectId, documentId));
+    },
+
+    /** The stored PDF, for the source viewer. Uploaded files are immutable (D-020). */
+    async getFile(projectId: string, documentId: string): Promise<{ fileName: string; bytes: Uint8Array }> {
+      const document = await db.labDocument.findFirst({
+        where: { id: documentId, projectId },
+        select: { fileName: true, storagePath: true },
+      });
+      if (document === null) throw new NotFoundError("This lab report does not exist in the project. It may have been deleted.");
+      try {
+        return { fileName: document.fileName, bytes: await readUpload(deps.storageDir, document.storagePath) };
+      } catch (error) {
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+          throw new NotFoundError(`The stored PDF of ${document.fileName} is missing from the storage folder.`);
+        }
+        throw error;
+      }
     },
 
     /** Stores each file once per project. Every file gets its own outcome; one bad file does not stop the others. */
@@ -480,7 +354,10 @@ export function labDocumentService(overrides: Partial<LabDocumentDeps> = {}) {
       return outcomes;
     },
 
-    /** Retry after a failure, or extract again. Rows the employee reviewed are only replaced with replaceReviewed. */
+    /**
+     * Retry after a failure, or extract again. Only AI drafts the employee has not accepted or corrected are replaced,
+     * unless replaceReviewed is set; rows the employee added stay either way.
+     */
     async startExtraction(projectId: string, documentId: string, options: { replaceReviewed: boolean }): Promise<LabDocumentDto> {
       await findProject(projectId);
       await expireStale(projectId);
@@ -489,20 +366,11 @@ export function labDocumentService(overrides: Partial<LabDocumentDeps> = {}) {
       if (document.errorCode === NO_TEXT_CODE) {
         throw new ConflictError(`${NO_TEXT_MESSAGE} Extracting it again cannot help; enter its results manually.`);
       }
-      if (!options.replaceReviewed) {
-        const reviewed = await db.$transaction((tx) => reviewedResultIds(tx, projectId, documentId));
-        if (reviewed.length > 0) {
-          throw new ConflictError(
-            `${reviewed.length} result(s) of this file were already accepted or corrected. Confirm that a new extraction may replace them.`,
-            REVIEWED_RESULTS_CONFLICT,
-          );
-        }
-      }
       if (!(await claim(documentId, RE_EXTRACTABLE))) {
         throw new ConflictError("The extraction of this file is already running.");
       }
       deps.schedule(() => runExtraction(documentId, options.replaceReviewed));
-      return toDocumentDto(await loadDocument(projectId, documentId));
+      return toDto(projectId, await loadDocument(projectId, documentId));
     },
 
     async getAiRun(projectId: string, runId: string): Promise<AiRunDetail> {

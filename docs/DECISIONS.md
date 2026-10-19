@@ -203,3 +203,57 @@ are replaced, never added. Rows the employee accepted or corrected (a `Correctio
 says `replaceReviewed: true`; without it the API answers 409 `REVIEWED_RESULTS` and the UI asks for confirmation.
 `MANUAL` rows are never touched. While a document is `EXTRACTING` or `FAILED`, its results are not returned at all, so a
 failed step never shows stale rows as current.
+
+**Changed in phase 4 (D-023):** the 409 `REVIEWED_RESULTS` confirmation is gone.
+
+## D-023 · Re-extraction keeps reviewed rows without asking (2026-10-19)
+
+Supersedes the confirmation step of D-022. "Extract again" (`replaceReviewed: false`) now always runs: AI rows the
+employee accepted or corrected and every `MANUAL` row stay as they are, and only untouched AI drafts are replaced. A new
+draft for the same sample and layer as a kept, non-rejected row is not inserted, so nothing is doubled. A rejected,
+uncorrected row is a discarded draft and is replaced like the others. `replaceReviewed: true` still replaces reviewed AI
+rows; the Lab reports card offers it as a secondary, destructive choice when reviewed rows exist. Reason: the phase 4
+requirement that re-extraction never erases accepted rows, and the earlier dialog only offered "cancel" or "replace
+everything".
+
+## D-024 · Review: corrections, decisions and what leaves review (2026-10-19)
+
+- Editable fields: sample ID, layer, result, asbestos type, content % and lab note. Page and quote are evidence: when
+  they are wrong the row is rejected and the right row is added by hand with its own page and quote.
+- Every correction needs a reason (`reasonSchema`, max 300 characters); the route handler and the service both parse
+  with the same zod schema, so a missing reason is HTTP 400 either way. Each changed field is one `Correction`
+  (`oldValue`/`newValue` JSON-encoded, `null` when absent); an unchanged field is not logged and a correction that
+  changes nothing is a 400. `aiJson` is never written after the extraction.
+- A correction puts the row back to `PENDING` (also from `ACCEPTED`), unless the request says `accept: true`
+  ("Save and accept"): what is used must have been accepted in its current form.
+- Rejecting needs a reason (`rejectReason`). "Back to pending" (`REOPEN`) undoes a decision.
+- A row cannot be accepted without a sample ID, a layer, a quote and a page that exists in the PDF.
+- "Accept all verified" takes pending rows with `evidenceVerified`, confidence not `LOW` and no open flag. Flags can
+  appear after a correction while the AI confidence stays as it was, so "no open flag" is checked too.
+- A document is `ACCEPTED` when it has at least one row and none is pending; any pending row (a correction, a reopen, an
+  added row, a re-extraction) moves it back to `NEEDS_REVIEW`. A document without rows stays in review.
+- **Only accepted rows of `ACCEPTED` documents** reach matching and the report (`labReviewService.acceptedResults`).
+  With accepted rows of half-reviewed documents, S02 with the tile accepted and the adhesive still pending would read as
+  not detected: an invented negative. A document still in review counts as "awaiting result" instead.
+- The employee can enter or correct the lab report ID (Review tab, with a reason). It is logged as a `Correction` with
+  entity `LabDocument`, field `labReportId`; a new extraction keeps it and drops the `LAB_REPORT_ID_MISSING` warning.
+  A report with no ID at all is identified by its file name in matching, as that warning says.
+- Every review change moves `Project.updatedAt` in the same transaction.
+
+## D-025 · Evidence checks run again after every review change (2026-10-19)
+
+`checkResultRows` (checks b–e, g, h of `verifyExtraction`) runs on the current values of every non-rejected row of the
+document after each correction, decision, added row and re-extraction (`refreshDocumentReview`). A corrected sample ID
+loses its "not in the cited line" flag, a correction that contradicts the line gains one, and a row added by hand covers
+a line the AI skipped, so its `LINE_NOT_EXTRACTED` warning disappears. Other document warnings describe the AI answer
+and are kept. `PERCENTAGE_OUT_OF_RANGE` is carried while the percentage is still empty, because the bad value exists only
+in `aiJson`. Confidence is the AI's own statement and is never recomputed.
+
+## D-026 · One line builder for the server and the PDF viewer (2026-10-19)
+
+`src/lib/pdfText.ts` holds the line reconstruction (`groupLines`), `normalizeEvidence` and the quote search. The server
+uses it to store page lines and verify quotes; the Source panel feeds the same function the text items pdf.js gives
+react-pdf in the browser (same `pdfjs-dist` version, D-004) and marks the items of the matching line through
+`customTextRenderer`. "Quote found" in the viewer therefore means the same as `evidenceVerified` on the server. A quote
+on no line shows "Evidence not found on this page — verify manually"; a quote on several lines is shown as ambiguous.
+The PDF is served from `GET …/lab-documents/[docId]/file` (read-only upload, cacheable because it never changes).

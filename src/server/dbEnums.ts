@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { REVIEW_STATUSES } from "@/domain/labReview";
 
 /**
  * Allowed values of the String status columns in prisma/schema.prisma (SQLite has no enums).
@@ -13,7 +14,7 @@ export const aiRunStatusSchema = z.enum(["RUNNING", "SUCCEEDED", "FAILED"]);
 export const labResultOriginSchema = z.enum(["AI", "MANUAL"]);
 export const confidenceSchema = z.enum(["HIGH", "MEDIUM", "LOW"]);
 export type Confidence = z.infer<typeof confidenceSchema>;
-export const reviewStatusSchema = z.enum(["PENDING", "ACCEPTED", "REJECTED"]);
+export const reviewStatusSchema = z.enum(REVIEW_STATUSES);
 export const issueDecisionSchema = z.enum(["RESOLVED", "FLAGGED"]);
 export const narrativeSourceSchema = z.enum(["AI_DRAFT", "EDITED"]);
 export const revisionStatusSchema = z.enum(["GENERATING", "READY", "FAILED"]);

@@ -11,6 +11,7 @@ import { LabReportsTab, useLabDocuments } from "@/components/lab-reports/lab-rep
 import { MaterialsTab } from "@/components/projects/materials-tab";
 import { ProjectForm } from "@/components/projects/project-form";
 import { UnsavedChangesProvider, useUnsavedChanges } from "@/components/projects/unsaved-changes";
+import { ReviewTab, pendingRowCount } from "@/components/review/review-tab";
 import { ApiError, api, queryKeys } from "@/lib/api";
 import { formatDateTime } from "@/lib/dates";
 
@@ -25,8 +26,7 @@ type TabValue = (typeof TABS)[number]["value"];
 
 const isTab = (value: string | null): value is TabValue => TABS.some((tab) => tab.value === value);
 
-const PLANNED: Record<Exclude<TabValue, "project" | "materials" | "lab-reports">, string> = {
-  review: "Match lab results to material zones by sample ID and resolve or flag every open issue.",
+const PLANNED: Record<Exclude<TabValue, "project" | "materials" | "lab-reports" | "review">, string> = {
   report: "Generate the report revision, preview its PDF and download the matching Word and PDF files.",
 };
 
@@ -125,6 +125,11 @@ function Workspace({ projectId }: { projectId: string }) {
               {item.value === "lab-reports" && labDocuments.data ? (
                 <span className="text-xs text-muted-foreground tabular-nums">{labDocuments.data.length}</span>
               ) : null}
+              {item.value === "review" && pendingRowCount(labDocuments.data) > 0 ? (
+                <span className="text-xs text-amber-700 tabular-nums dark:text-amber-300" aria-label={`(${pendingRowCount(labDocuments.data)} rows pending)`}>
+                  {pendingRowCount(labDocuments.data)}
+                </span>
+              ) : null}
             </TabsTrigger>
           ))}
         </TabsList>
@@ -138,6 +143,9 @@ function Workspace({ projectId }: { projectId: string }) {
         </TabsContent>
         <TabsContent value="lab-reports" className="pt-4">
           <LabReportsTab projectId={project.id} />
+        </TabsContent>
+        <TabsContent value="review" className="pt-4">
+          <ReviewTab projectId={project.id} />
         </TabsContent>
         {(Object.keys(PLANNED) as (keyof typeof PLANNED)[]).map((value) => (
           <TabsContent key={value} value={value} className="pt-4">

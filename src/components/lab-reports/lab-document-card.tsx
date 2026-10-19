@@ -26,10 +26,11 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { RawResponseDialog } from "@/components/lab-reports/raw-response-dialog";
 import { formatResultLabel } from "@/domain/format";
-import { ApiError, api, queryKeys } from "@/lib/api";
+import { reviewProgress } from "@/domain/labReview";
+import { api, queryKeys } from "@/lib/api";
 import { formatDateTime } from "@/lib/dates";
 import { cn } from "@/lib/utils";
-import type { AiRunSummary, FlagDto, LabDocumentDto, LabResultDto } from "@/server/services/labDocumentService";
+import type { AiRunSummary, FlagDto, LabDocumentDto, LabResultDto } from "@/server/services/labDocumentDto";
 
 const STATUS: Record<LabDocumentDto["status"], { label: string; className: string }> = {
   UPLOADED: { label: "Uploaded", className: "bg-muted text-muted-foreground" },
@@ -39,7 +40,7 @@ const STATUS: Record<LabDocumentDto["status"], { label: string; className: strin
   FAILED: { label: "Failed", className: "bg-destructive/10 text-destructive" },
 };
 
-const RESULT_CLASS: Record<LabResultDto["resultLabel"], string> = {
+export const RESULT_CLASS: Record<LabResultDto["resultLabel"], string> = {
   DETECTED: "text-red-700 dark:text-red-400",
   NOT_DETECTED: "text-foreground",
   INCONCLUSIVE: "text-amber-800 dark:text-amber-300",
@@ -81,23 +82,25 @@ export function LabDocumentCard({
 }) {
   const queryClient = useQueryClient();
   const [rawRunId, setRawRunId] = useState<string | null>(null);
-  const [confirmReplace, setConfirmReplace] = useState<string | null>(null);
+  const [confirmExtract, setConfirmExtract] = useState(false);
 
   const extract = useMutation({
     mutationFn: (replaceReviewed: boolean) => api.extractLabDocument(projectId, document.id, replaceReviewed),
     onSuccess: () => {
-      setConfirmReplace(null);
+      setConfirmExtract(false);
       void queryClient.invalidateQueries({ queryKey: queryKeys.labDocuments(projectId) });
     },
     onError: (error) => {
-      if (error instanceof ApiError && error.code === "REVIEWED_RESULTS") {
-        setConfirmReplace(error.message);
-        return;
-      }
       toast.error(`Extraction not started. ${error.message}`);
       void queryClient.invalidateQueries({ queryKey: queryKeys.labDocuments(projectId) });
     },
   });
+
+  // Rows a new extraction keeps: AI rows accepted or corrected, and every row added by hand.
+  const kept = document.results.filter(
+    (row) => row.origin === "MANUAL" || row.reviewStatus === "ACCEPTED" || row.corrections.length > 0,
+  ).length;
+  const extractAgain = () => (kept > 0 ? setConfirmExtract(true) : extract.mutate(false));
 
   const busy = document.status === "UPLOADED" || document.status === "EXTRACTING";
   const run = document.extractedBy ?? document.lastRun;
@@ -121,7 +124,7 @@ export function LabDocumentCard({
         <CardDescription>{description}</CardDescription>
         <CardAction>
           {document.status === "NEEDS_REVIEW" || document.status === "ACCEPTED" ? (
-            <Button variant="outline" size="sm" disabled={extract.isPending} onClick={() => extract.mutate(false)}>
+            <Button variant="outline" size="sm" disabled={extract.isPending} onClick={extractAgain}>
               <RotateCcwIcon aria-hidden />
               Extract again
             </Button>
@@ -186,17 +189,22 @@ export function LabDocumentCard({
       ) : null}
 
       <RawResponseDialog projectId={projectId} runId={rawRunId} onClose={() => setRawRunId(null)} />
-      <Dialog open={confirmReplace !== null} onOpenChange={(open) => (open ? undefined : setConfirmReplace(null))}>
+      <Dialog open={confirmExtract} onOpenChange={setConfirmExtract}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Replace reviewed results?</DialogTitle>
+            <DialogTitle>Extract {document.fileName} again?</DialogTitle>
             <DialogDescription>
-              {confirmReplace} The earlier AI values stay in the AI run history and the correction log.
+              {kept} reviewed row{kept === 1 ? " is" : "s are"} kept as {kept === 1 ? "it is" : "they are"} (accepted, corrected
+              or added by hand); only the other AI drafts are replaced. Replacing the reviewed AI rows too discards their review;
+              the earlier values stay in the AI run history and the correction log.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter showCloseButton>
             <Button variant="destructive" disabled={extract.isPending} onClick={() => extract.mutate(true)}>
-              Extract again and replace
+              Replace reviewed AI rows too
+            </Button>
+            <Button disabled={extract.isPending} onClick={() => extract.mutate(false)}>
+              Extract again, keep reviewed rows
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -205,7 +213,7 @@ export function LabDocumentCard({
   );
 }
 
-function FlagList({ flags, className }: { flags: FlagDto[]; className?: string }) {
+export function FlagList({ flags, className }: { flags: FlagDto[]; className?: string }) {
   if (flags.length === 0) return null;
   return (
     <ul className={cn("flex flex-col gap-1", className)}>
@@ -221,6 +229,7 @@ function FlagList({ flags, className }: { flags: FlagDto[]; className?: string }
 
 function ExtractionResults({ document }: { document: LabDocumentDto }) {
   const verified = document.results.filter((row) => row.evidenceVerified).length;
+  const progress = reviewProgress(document.results);
   const flagged = document.results.filter((row) => row.flags.length > 0).length;
   const header = [document.labName, document.projectRef ? `project ${document.projectRef}` : null, document.issuedDate ? `issued ${document.issuedDate}` : null]
     .filter(Boolean)
@@ -230,9 +239,24 @@ function ExtractionResults({ document }: { document: LabDocumentDto }) {
     <div className="flex flex-col gap-3">
       {header ? <p className="text-sm text-muted-foreground">{header}</p> : null}
       <p className="text-sm">
-        <span className="font-medium">AI draft, not reviewed.</span>{" "}
+        <span className="font-medium">
+          {document.status === "ACCEPTED"
+            ? "Reviewed."
+            : progress.reviewed === 0
+              ? "AI draft, not reviewed."
+              : `AI draft, ${progress.reviewed} of ${progress.total} rows reviewed.`}
+        </span>{" "}
         {document.results.length} result row{document.results.length === 1 ? "" : "s"} · {verified} with the quote found on the cited
         page · {flagged} flagged
+        {progress.total > 0 ? ` · ${progress.accepted} accepted · ${progress.rejected} rejected` : ""}
+        {document.status === "NEEDS_REVIEW" ? (
+          <>
+            {" "}
+            <Button variant="link" size="xs" className="h-auto px-0" onClick={() => window.history.replaceState(null, "", "?tab=review")}>
+              Review on the Review tab
+            </Button>
+          </>
+        ) : null}
       </p>
       <FlagList flags={document.warnings} />
 
